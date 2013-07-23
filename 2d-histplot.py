@@ -47,7 +47,7 @@ copol_min = copol_mean-copol_std
 copol_max = copol_mean+copol_std
 
 bin_copol=fastbin(0.,0.002,100.,-999,-888)
-bin_depol=fastbin(0.,2.0,100.,-999,-888)
+bin_depol=fastbin(0.,0.5,100.,-999,-888)
 
 copol_centers=bin_copol.get_centers()
 depol_centers=bin_depol.get_centers()
