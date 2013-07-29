@@ -10,6 +10,7 @@ import os
 import numpy as np
 import pandas as pan
 import matplotlib.pyplot as plt
+import pickle
 #from plot_fields import loadvars
 
 import fasthist as fh
@@ -32,6 +33,10 @@ MPLfile.alt_resample(altrange)
 
 copol = MPLfile.data[0]
 crosspol = MPLfile.data[1]
+
+
+copol = MPLdat[0]
+crosspol = MPLdat[1]
 
 copolvals = np.hstack(copol.values).astype('float32')
 crosspolvals = np.hstack(crosspol.values).astype('float32')

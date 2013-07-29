@@ -149,8 +149,93 @@ def altticks(ax, axisdat, numticks = 5, fsize = 21, tcolor = 'k'):
         line.set_color(tcolor)
         line.set_markersize(10)
         line.set_markeredgewidth(3)
-    
 
+def vertprof(df, altrange, exact_times, plot_type = 'line', zeromask = False, 
+             savefig = False, filename = 'tempfig.png'):    
+    import os, sys
+    import numpy as np
+    import datetime as dt
+    import bisect
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as clr
+    import pandas as pan
+    import LNC_tools as LNC
+    import LNC_plot as LNCplt
+    
+    minalt = altrange[0]
+    maxalt = altrange[1]
+    
+    daterange = df.index
+    ymin = df.columns[0]
+    ymax = df.columns[-1]
+    
+    if ymax > maxalt:
+        df = df.loc[:,:maxalt]
+    
+    if minalt > ymin:
+        df.loc[:,:minalt] = 'nan'
+    
+    approx_times = []
+    
+   
+    for ts in exact_times:    
+        i = bisect.bisect_left(daterange, ts)
+        approx_times.append(min(daterange[max(0, i-1): i+2], key=lambda t: abs(ts - t)))
+    
+    fig = plt.figure()
+    
+    numprof = len(approx_times)
+    
+    for n in range(numprof): 
+        print approx_times[n]
+        s = df.ix[approx_times[n]]
+        
+        if zeromask:  
+            s = s[s>0]
+        else:
+            zeroline = np.zeros_like(s)
+            
+        alt = s.index
+        print s.max()
+        ax = fig.add_subplot(1,numprof,n+1)
+        
+        if plot_type == 'line':
+            im = ax.plot(s,alt, linewidth = 4)
+            plt.ylim([ymin,ymax])
+        
+        if plot_type == 'scatter':
+            im = ax.scatter(s,alt)
+            plt.ylim([ymin,ymax])
+        
+        try:
+            zeroline 
+        except NameError:
+            continue
+        else:
+            ax.plot(zeroline,alt,'r--', linewidth = 2)
+            
+        plt.yticks(fontsize = 21)
+        plt.ylabel('Altitude [m]', fontsize = 21)
+        
+        for line in ax.yaxis.get_ticklines():
+            line.set_color('k')
+            line.set_markersize(6)
+            line.set_markeredgewidth(2)
+            
+        for line in ax.xaxis.get_ticklines():
+            line.set_color('k')
+            line.set_markersize(6)
+            line.set_markeredgewidth(2)    
+            
+        plt.xticks(fontsize = 21)
+        plt.title(approx_times[n], fontsize = 21)
+        fig.subplots_adjust(wspace = 0.5)
+    
+    plt.show()
+    
+    if savefig:
+        plt.savefig(filename)
+        
     
 if __name__ == '__main__':
     import pandas as pan

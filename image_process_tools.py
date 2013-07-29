@@ -76,7 +76,7 @@ def gauss_kern(sizex, sizey=None):
     return g / g.sum()
 
 
-def blur_image(im, (nx,ny), kernel = 'Gaussian'):
+def smooth_2D(im, (nx,ny), kernel = 'Gaussian'):
     """ blurs the image by convolving with a gaussian kernel of typical
         size n. The optional keyword argument ny allows for a different
         size in the y direction.
@@ -99,3 +99,30 @@ def blur_image(im, (nx,ny), kernel = 'Gaussian'):
     print "...Done!"
     return imout
 
+def slopecal(df, axis = 0):
+    """  calculates first derivative with altitude (axis = 1)
+        or with time (axis = 0) 
+    """
+    from scipy import sparse as spar
+    import numpy as np
+    import pandas as pan
+    
+    im = df.values
+    
+    imshape = np.shape(im)
+       
+    slopemat = spar.diags([1,-1],[0,1], shape = [imshape[axis],imshape[axis]])
+    
+    if axis == 1 or len(imshape) == 1:    
+        imslope = im*slopemat
+        imslope[:,0] = 0
+    elif axis == 0:
+        imslope = (im.T*slopemat).T
+        imslope[0,:] = 0
+        
+    dfout = pan.DataFrame(data=imslope, index = df.index, columns = df.columns)
+        
+    return dfout
+    
+    
+    
