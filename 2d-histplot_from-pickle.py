@@ -70,8 +70,8 @@ fig.savefig('plot1.png')
 fig.canvas.draw()
 
 import fasthist as h2d
-depolhist=h2d.fullhist(depolvals,20,0.24,0.42,-9999.,-8888.)
-copolhist=h2d.fullhist(copolvals,20,0.,1.6e-3,-9999.,-8888.)
+depolhist=h2d.fullhist(depolvals,200,0.24,0.42,-9999.,-8888.)
+copolhist=h2d.fullhist(copolvals,200,0.,1.6e-3,-9999.,-8888.)
 theOut=h2d.hist2D(copolhist['fullbins'],depolhist['fullbins'],copolhist['numBins'],\
                   depolhist['numBins'])
 
