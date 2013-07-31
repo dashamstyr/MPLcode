@@ -19,7 +19,7 @@ from binit import fastbin
 from matplotlib.colors import Normalize
 from matplotlib import cm
 
-os.chdir('C:\Program Files (x86)\SigmaMPL\DATA')
+os.chdir('C:\SigmaMPL\DATA')
 
 filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
 
