@@ -1,11 +1,10 @@
 import pandas as pan
 import numpy as np
-import os,sys
+import os
 import MPLtools as mtools
 import image_process_tools as imtools
 import matplotlib.pyplot as plt
-import numpy as np
-from MPL_plot import *
+import MPL_plot as mplot
 
 #----------------------------------------------------------------------------
 #Uses tools created in MPL_tools to open all files in a folder and resample
@@ -14,7 +13,7 @@ from MPL_plot import *
 #July 05, 2012
 #----------------------------------------------------------------------------
 
-os.chdir('C:\Program Files (x86)\SigmaMPL\DATA')
+os.chdir('C:\SigmaMPL\DATA')
 
 #newdir = mtools.set_dir('Select Event Folder')
 #
@@ -107,7 +106,7 @@ plt.rc('font', family='serif', size=fsize)
 
 
 fig = plt.figure()
-
+fig.clf()
 h_set = range(1,25)
 h_set = map(str,h_set)
 
@@ -127,22 +126,22 @@ alt = copol.columns
 print 'Generating Figure'
 
 ax1 = fig.add_subplot(2,1,1)
-im1 = backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], fsize = fsize)
+im1 = mplot.backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (0,0.003), fsize = fsize)
 cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
 cbar1.ax.tick_params(labelsize = fsize)
-dateticks(ax1, datetime, hours = h_set, fsize = fsize, tcolor = 'w')
+mplot.dateticks(ax1, datetime, hours = h_set, fsize = fsize, tcolor = 'w')
 ax1.set_xticklabels([])
 t1 = ax1.set_title('Attenuated Backscatter', fontsize = fsize+10)
 t1.set_y(1.03)
         
 ax2 = fig.add_subplot(2,1,2)
-im2 = depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], fsize = fsize)
+im2 = mplot.depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], (0,0.5), fsize = fsize)
 cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6)
-cbar2.set_ticks(np.arange(0,0.5,0.1))
-cbar2.set_ticklabels(np.arange(0,0.5,0.1))
+cbar2.set_ticks(np.arange(0,0.6,0.1))
+cbar2.set_ticklabels(np.arange(0,0.6,0.1))
 cbar2.ax.tick_params(labelsize = fsize)
 #set axis ranges and tickmarks based on data ranges
-dateticks(ax2, datetime, hours = h_set, fsize = fsize)
+mplot.dateticks(ax2, datetime, hours = h_set, fsize = fsize)
 ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
 fig.autofmt_xdate()
 t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)

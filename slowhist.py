@@ -9,6 +9,7 @@ def getVersion():
     
 
 def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighValue):
+    from math import isnan
     """
        given a list or numpy array dataVecPy, bin values in
        numbins between mindata and maxsdata, returning a
@@ -18,7 +19,7 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
     """
     dataVec=np.ascontiguousarray(dataVecPy,dtype=np.float64)
 #    dataPtr=<double*>dataVec.data
-    binsize=(maxdata-mindata)/numbins
+    binsize=float(maxdata-mindata)/numbins
     numPts=dataVec.shape[0]
     outcounts = np.zeros([numbins,],dtype=np.int64)
 #    countPtr=<Py_ssize_t*> outcounts.data
@@ -32,7 +33,12 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
     highcount=0
     
     for i in range(numPts):
-        fbin =  ((dataVec[i] - mindata) / binsize)
+        if isnan(dataVec[i]):
+            lowcount+=1
+            savebins[i]=missingLowValue
+            continue
+        else:
+            fbin =  int((dataVec[i] - mindata) / binsize)
         if fbin < 0:
             lowcount+=1
             savebins[i]=missingLowValue
@@ -48,7 +54,7 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
     for i in range(numbins + 1):
       binedges[i] = mindata + (i*binsize)
     for i in range(numbins):
-      bincenters[i] = (binedges[i] + binedges[i+1])/2.
+      bincenters[i] = float(binedges[i] + binedges[i+1])/2.
     retval={}
     retval["missingLowValue"] = missingLowValue
     retval["missingHighValue"] = missingHighValue
@@ -176,3 +182,52 @@ def findMedian(dataVector,indexList,maskedValue= -9999.):
     outArray=ma.masked_where(outVec==maskedValue,outVec)    
     return outArray
 
+def althist(datavalsPy, altvalsPy, numdatbins, histrange=None):
+    """
+      datavalsPy is an array of data values with each column representing an altitude
+      altvalsPy is a vector of altitudes with ove value for each column
+      valspecol is the number of data values per column
+      histrange = (min,max) a tuple representing the minimim and maximum data values
+      converageMap is a 2-d histogram with the number of points
+      in each 2d bin
+    """
+    datavals=np.ascontiguousarray(datavalsPy)
+    altvals=np.ascontiguousarray(altvalsPy)
+    
+    if numdatbins >= datavals.shape[0]:
+        raise ValueError("Number of bins cannot exceed data set")
+    else:
+        numXDataPoints = numdatbins 
+    
+    numYDataPoints=altvals.shape[0]
+    if datavals.shape[1] != altvals.shape[0]:
+        raise ValueError('need one altitude per data column')
+#    numBins2D=numXDataPoints*numYDataPoints
+    
+    coverageMap = np.empty([numXDataPoints,numYDataPoints])
+    indexArray = np.empty([numXDataPoints+1,numYDataPoints])
+    #drop the indexes into a nested list
+    for i in range(numYDataPoints):
+        coverageMap[:,i],indexArray[:,i] = np.histogram(datavals[:,i],bins=numdatbins,range=histrange)
+    #      if (xBinArray[i] > -1) & (yBinArray[i] > -1):
+    #        x = xBinArray[i]
+    #        y = yBinArray[i]
+    #        #2D row major, numYbins is number of columns, numXbins is number of rows
+    #        #if numXbins=10 and numYbins=5, then an (x,y) of (5,3) gives
+    #        #an index of 28
+    #        index = numYbins*x + y
+    #        binVecs[index].append(i)
+    #return an 2D numpy array with the number of points in each cell
+    #    coverageMap = np.zeros(numBins2D,dtype=np.int64)
+    #    #convert list of list to list of np.arrays
+    #    arrayList=[]
+    #    for i in range(numBins2D):
+    #      arrayList.append(np.array(binVecs[i],dtype=np.int64))
+    #      #number of pixels in each bin
+    #      coverageMap[i]=len(binVecs[i])
+    #     
+    #    coverageMap = np.reshape(coverageMap,(numXbins,numYbins))
+    retval={}
+    retval["coverage"]= coverageMap
+    retval["indexList"]= indexArray
+    return retval

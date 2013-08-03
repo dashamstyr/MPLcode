@@ -11,10 +11,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import slowhist as h2d
 from matplotlib import cm
+import time, datetime
 
 olddir = os.getcwd()
 
-os.chdir('C:\SigmaMPL\DATA')
+#os.chdir('C:\SigmaMPL\DATA')
+
+os.chdir('C:\SigmaMPL\DATA\Processed')
 
 filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
 
@@ -22,7 +25,7 @@ MPLfile = mtools.MPL()
 
 MPLfile.fromHDF(filepath[0])
 
-altrange = np.arange(1000,10000,10)
+altrange = np.arange(150,20000,10)
 
 MPLfile.alt_resample(altrange)
 
@@ -32,30 +35,51 @@ crosspol = MPLfile.data[1]
 copolvals = np.hstack(copol.values).astype('float32')
 crosspolvals = np.hstack(crosspol.values).astype('float32')
 
-depolMPL = crosspolvals/copolvals
+depolMPL = crosspol.values/copol.values
 
 depolvals = depolMPL/(depolMPL+1)
 
-copol_mean = np.mean(copolvals)
-copol_std = np.std(copolvals)
+numbins = 100
+depolmin = 0.0
+depolmax = 0.5
+copolmin = 0.0
+copolmax = 3e-3
 
-copol_min = copol_mean-copol_std
-copol_max = copol_mean+copol_std
+copolhist=h2d.fullhist(copolvals,numbins,copolmin,copolmax,-9999.,-8888.)
+depolhist=h2d.fullhist(np.hstack(depolvals),numbins,depolmin,depolmax,-9999.,-8888.)
 
-depolhist=h2d.fullhist(depolvals,200,0.24,0.42,-9999.,-8888.)
-copolhist=h2d.fullhist(copolvals,200,0.,1.6e-3,-9999.,-8888.)
-theOut=h2d.hist2D(copolhist['fullbins'],depolhist['fullbins'],copolhist['numBins'],\
-                  depolhist['numBins'])
-counts=theOut['coverage']
-counts[counts < 1] = 1
-logcounts=np.log10(counts)
-s = np.shape(counts)
+altOut = h2d.althist(depolvals,altrange,numbins,(depolmin,depolmax))
+
+copolOut=h2d.hist2D(copolhist['fullbins'],depolhist['fullbins'],copolhist['numBins'],depolhist['numBins'])
+
+altcounts=altOut['coverage']
+copolcounts = copolOut['coverage']
+
+altcounts[altcounts < 1] = 1
+copolcounts[copolcounts < 1] = 1
+
+altlogcounts=np.log10(altcounts)
+copollogcounts=np.log10(copolcounts)
                   
 try:
     os.chdir('Plots')
 except WindowsError:
     os.makedirs('Plots')
     os.chdir('Plots')
+
+startdate = copol.index[0].strftime("%Y-%m-%d")
+enddate = copol.index[-1].strftime("%Y-%m-%d")
+
+starttime = copol.index[0].strftime("%H")
+endtime = copol.index[-1].strftime("%H")
+
+if startdate == enddate:
+    if starttime == endtime:
+        savetime = startdate+'_'+starttime
+    else:
+        savetime = startdate+'_'+starttime+'-'+endtime
+else:
+    savetime = startdate+'-'+enddate
 
 fignum = 0
 
@@ -67,7 +91,7 @@ fignum = 0
 #the_axis.set_xlabel('depolvals')
 #the_axis.set_ylabel('copolvals')
 #the_axis.set_title('raw scatterplot')
-#fig.savefig('plot1.png')
+#fig.savefig('{0}_{1}-{2}m-copoldepolraw.png'.format(savetime,altrange[0],altrange[-1]))
 #fig.canvas.draw()
 
 cmap=cm.bone
@@ -78,24 +102,39 @@ fignum+=1
 fig=plt.figure(fignum)
 fig.clf()
 axis=fig.add_subplot(111)
-
-im=axis.pcolormesh(depolhist['centers'],copolhist['centers'],logcounts, cmap = cmap)
+im=axis.pcolormesh(depolhist['centers'],altrange,altlogcounts.T, cmap = cmap)
 cb=plt.colorbar(im,extend='both')
 title="2-d histogram"
 colorbar="log10(counts)"
 the_label=cb.ax.set_ylabel(colorbar,rotation=270)
 axis.set_xlabel('depolvals')
-axis.set_ylabel('copolvals')
+axis.set_ylabel('Altitude [m]')
 axis.set_title(title)
+fig.savefig('{0}_{1}-{2}m-althist.png'.format(savetime,altrange[0],altrange[-1]))
 fig.canvas.draw()
-fig.savefig('{0}-{1}_hist2d.png'.format(copol.index[0],copol.index[-1]))
 
 fignum+=1
-fig = plt.figure(fignum)
+fig=plt.figure(fignum)
 fig.clf()
-axis = fig.add_subplot(111)
-hist = axis.hist(depolvals, bins = 100)
+axis=fig.add_subplot(111)
+im=axis.pcolormesh(depolhist['centers'],copolhist['centers'],copollogcounts, cmap = cmap)
+cb=plt.colorbar(im,extend='both')
+title="2-d histogram"
+colorbar="log10(counts)"
+the_label=cb.ax.set_ylabel(colorbar,rotation=270)
+axis.set_xlabel('Volume Depolarization Ratio')
+axis.set_ylabel('Attenuated Backscatter')
+axis.set_title(title)
+fig.savefig('{0}_{1}-{2}m-copoldepol.png'.format(savetime,altrange[0],altrange[-1]))
+fig.canvas.draw()
 
+#fignum+=1
+#fig = plt.figure(fignum)
+#fig.clf()
+#axis = fig.add_subplot(111)
+#hist = axis.hist(depolvals, bins = 100)
+#fig.savefig('{0}_{1}-{2}m-1Ddepolhist.png'.format(savetime,altrange[0],altrange[-1]))
+#fig.canvas.draw()
 plt.show()
 
 os.chdir(olddir)

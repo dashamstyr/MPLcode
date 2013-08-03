@@ -1,4 +1,4 @@
-def depol_plot(fig, ax, ar, xdata, ydata, data, fsize = 21):
+def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
     
@@ -26,7 +26,7 @@ def depol_plot(fig, ax, ar, xdata, ydata, data, fsize = 21):
     
     my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,1064)
     
-    im = ax.imshow(data, vmin=0, vmax=1.0, cmap = plt.cm.jet)
+    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
     forceAspect(ax,ar)
         
     altticks(ax, ydata, fsize = fsize)
@@ -42,7 +42,7 @@ def depol_plot(fig, ax, ar, xdata, ydata, data, fsize = 21):
 
     return im
 
-def backscatter_plot(fig, ax, ar, xdata, ydata, data, fsize = 21):
+def backscatter_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
     import numpy as np
@@ -74,7 +74,7 @@ def backscatter_plot(fig, ax, ar, xdata, ydata, data, fsize = 21):
     
     my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,1064)
     
-    im = ax.imshow(data, vmin=0, vmax=0.0003, cmap = plt.cm.jet)
+    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = plt.cm.jet)
     forceAspect(ax,ar)       
     altticks(ax, ydata, fsize = fsize, tcolor = 'w')
 
