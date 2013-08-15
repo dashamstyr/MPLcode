@@ -25,12 +25,12 @@ MPLfile = mtools.MPL()
 
 MPLfile.fromHDF(filepath[0])
 
-altrange = np.arange(150,20000,10)
+altrange = MPLfile.NRB[0].columns
 
-MPLfile.alt_resample(altrange)
+#MPLfile.alt_resample(altrange)
 
-copol = MPLfile.data[0]
-crosspol = MPLfile.data[1]
+copol = MPLfile.NRB[0]
+crosspol = MPLfile.NRB[1]
 
 copolvals = np.hstack(copol.values).astype('float32')
 crosspolvals = np.hstack(crosspol.values).astype('float32')
@@ -43,7 +43,7 @@ numbins = 100
 depolmin = 0.0
 depolmax = 0.5
 copolmin = 0.0
-copolmax = 3e-3
+copolmax = 3e-2
 
 copolhist=h2d.fullhist(copolvals,numbins,copolmin,copolmax,-9999.,-8888.)
 depolhist=h2d.fullhist(np.hstack(depolvals),numbins,depolmin,depolmax,-9999.,-8888.)
