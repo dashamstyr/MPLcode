@@ -778,7 +778,7 @@ class MPL:
             interp_afterpulse = np.interp(altvals,aprange,apvals)
             
             for i in range(len(MPLout[n].index)):
-                MPLout[n].iloc[i] = (MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i])
+                MPLout[n].iloc[i] = (MPLout[n].iloc[i] - interp_afterpulse - bg[n][i])*deadtimecor[n,i]
                 
         with open(overlapfile, 'rb') as binfile:
             overlapdat = array.array('d')
