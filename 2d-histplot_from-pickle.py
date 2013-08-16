@@ -6,8 +6,8 @@ Created on Wed Jul 17 13:10:30 2013
 """
 
 import site
-#site.addsitedir('/Users/phil/repos/MPLcode')
-#site.addsitedir('/Users/phil/lib/python')
+site.addsitedir('/Users/phil/repos/MPLcode')
+site.addsitedir('/Users/phil/lib/python')
 import MPLtools as mtools
 import os
 import numpy as np
@@ -58,18 +58,21 @@ copol_std = np.std(copolvals)
 copol_min = copol_mean-copol_std
 copol_max = copol_mean+copol_std
 
-#fignum=1
-#fig=plt.figure(fignum)
-#fig.clf()
-#the_axis=fig.add_subplot(111)
-#the_axis.plot(depolvals,copolvals,'b+')
-#the_axis.set_xlabel('depolvals')
-#the_axis.set_ylabel('copolvals')
-#the_axis.set_title('raw scatterplot')
-#fig.savefig('plot1.png')
-#fig.canvas.draw()
+fignum=1
+fig=plt.figure(fignum)
+fig.clf()
+the_axis=fig.add_subplot(111)
+the_axis.plot(depolvals,copolvals,'b+')
+the_axis.set_xlabel('depolvals')
+the_axis.set_ylabel('copolvals')
+the_axis.set_title('raw scatterplot')
+fig.canvas.draw()
+fig.savefig('plot1.png')
+#plt.close(fig)
 
-import slowhist as h2d
+import fasthist as h2d
+## depolhist=h2d.fullhist(depolvals,20,0.24,0.42,-9999.,-8888.)
+## copolhist=h2d.fullhist(copolvals,20,0.,1.6e-3,-9999.,-8888.)
 depolhist=h2d.fullhist(depolvals,200,0.24,0.42,-9999.,-8888.)
 copolhist=h2d.fullhist(copolvals,200,0.,1.6e-3,-9999.,-8888.)
 theOut=h2d.hist2D(copolhist['fullbins'],depolhist['fullbins'],copolhist['numBins'],\
@@ -79,17 +82,14 @@ cmap=cm.bone
 cmap.set_over('r')
 cmap.set_under('b')
 
-fig=plt.figure()
+fig=plt.figure(2)
 fig.clf()
 axis1=fig.add_subplot(111)
 counts=theOut['coverage']
 counts[counts < 1] = 1
 logcounts=np.log10(counts)
-s = np.shape(counts)
-#x = np.sin((depolhist['centers']+copolhist['centers']))
-
-
-im=axis1.pcolormesh(depolhist['centers'],copolhist['centers'],logcounts, cmap = cmap)
+im=axis1.pcolormesh(depolhist['centers'],copolhist['centers'],logcounts,
+                    cmap=cmap)
 cb=plt.colorbar(im,extend='both')
 title="2-d histogram"
 colorbar="log10(counts)"
@@ -99,5 +99,14 @@ axis1.set_ylabel('copolvals')
 axis1.set_title(title)
 fig.canvas.draw()
 fig.savefig('plot2.png')
+
+fig=plt.figure(3)
+fig.clf()
+axis3=fig.add_subplot(111)
+im=axis3.imshow(logcounts,cmap=cmap)
+plt.colorbar(im,extend='both')
 plt.show()
+plt.savefig('plot3.png')
+#plt.close(fig)
+
 
