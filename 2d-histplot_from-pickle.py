@@ -6,8 +6,9 @@ Created on Wed Jul 17 13:10:30 2013
 """
 
 import site
-site.addsitedir('/Users/phil/repos/MPLcode')
-site.addsitedir('/Users/phil/lib/python')
+site.addsitedir('C:\Users\User\Dropbox\Python_Scripts\GIT_Repos\MPLcode\hist2d')
+#site.addsitedir('/Users/phil/repos/MPLcode')
+#site.addsitedir('/Users/phil/lib/python')
 import MPLtools as mtools
 import os
 import numpy as np

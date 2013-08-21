@@ -62,10 +62,10 @@ altlogcounts=np.log10(altcounts)
 copollogcounts=np.log10(copolcounts)
                   
 try:
-    os.chdir('Plots')
+    os.chdir('../HistPlots')
 except WindowsError:
-    os.makedirs('Plots')
-    os.chdir('Plots')
+    os.makedirs('../HistPlots')
+    os.chdir('../HistPlots')
 
 startdate = copol.index[0].strftime("%Y-%m-%d")
 enddate = copol.index[-1].strftime("%Y-%m-%d")
@@ -104,10 +104,10 @@ fig.clf()
 axis=fig.add_subplot(111)
 im=axis.pcolormesh(depolhist['centers'],altrange,altlogcounts.T, cmap = cmap)
 cb=plt.colorbar(im,extend='both')
-title="2-d histogram"
+title="2-D Histogram: Altitude vs. Depol. Ratio"
 colorbar="log10(counts)"
 the_label=cb.ax.set_ylabel(colorbar,rotation=270)
-axis.set_xlabel('depolvals')
+axis.set_xlabel('Volume Depolarization Ratio')
 axis.set_ylabel('Altitude [m]')
 axis.set_title(title)
 fig.savefig('{0}_{1}-{2}m-althist.png'.format(savetime,altrange[0],altrange[-1]))
@@ -119,11 +119,11 @@ fig.clf()
 axis=fig.add_subplot(111)
 im=axis.pcolormesh(depolhist['centers'],copolhist['centers'],copollogcounts, cmap = cmap)
 cb=plt.colorbar(im,extend='both')
-title="2-d histogram"
+title="2-D Histogram: Backscatter vs. Depol. Ratio"
 colorbar="log10(counts)"
 the_label=cb.ax.set_ylabel(colorbar,rotation=270)
 axis.set_xlabel('Volume Depolarization Ratio')
-axis.set_ylabel('Attenuated Backscatter')
+axis.set_ylabel('Attenuated Backscatter $[km^{-1} sr^{-1}]$')
 axis.set_title(title)
 fig.savefig('{0}_{1}-{2}m-copoldepol.png'.format(savetime,altrange[0],altrange[-1]))
 fig.canvas.draw()

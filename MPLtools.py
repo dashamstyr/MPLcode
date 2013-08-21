@@ -335,7 +335,7 @@ class MPL:
                     hour = intarray16[5]
                     minute = intarray16[6]
                     second = intarray16[7]
-                    
+                                       
                     dt = datetime.datetime(year,month,day,hour,minute,second)
             
                     headerdat['shotsum'] = intarray32[0]  #total number of shots collected per profile
@@ -642,6 +642,7 @@ class MPL:
         #timestep must be in timeSeries period format: numF where num=step size and
         #F = offset alias.  Ex: H = hours, M = minutes, S = seconds, L = millieconds
         import pandas as pan
+        import numpy as np
         
         temphead = {}
         for col in self.header:
@@ -660,8 +661,15 @@ class MPL:
             else: headermethod = 'mean'
                         
             temphead[col] = self.header[col].resample(timestep, how = headermethod)            
-            if col in intmeancols:
-                temphead[col] = temphead[col].astype('int32')
+            
+            if (col in intmeancols) or (col in firstcols) or (col in maxcols):
+                try:
+                    temphead[col] = temphead[col].astype('int32')
+                except ValueError:
+                    whereisna = np.isnan(temphead[col])
+                    temphead[col][whereisna] = -999
+                    temphead[col] = temphead[col].astype('int32')
+
         
         self.header = pan.DataFrame(temphead)
         

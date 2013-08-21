@@ -124,7 +124,7 @@ def fileproc():
     im1 = mplot.backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (0,5), fsize = fsize)
     cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
     cbar1.ax.tick_params(labelsize = fsize)
-    mplot.dateticks(ax1, datetime, hours = h_set, fsize = fsize, tcolor = 'w')
+    mplot.dateticks(ax1, datetime, fsize = fsize, tcolor = 'w')
     ax1.set_xticklabels([])
     t1 = ax1.set_title('R-Squared', fontsize = fsize+10)
     t1.set_y(1.03)
@@ -136,7 +136,7 @@ def fileproc():
     cbar2.set_ticklabels(np.arange(0,0.6,0.1))
     cbar2.ax.tick_params(labelsize = fsize)
     #set axis ranges and tickmarks based on data ranges
-    mplot.dateticks(ax2, datetime, hours = h_set, fsize = fsize)
+    mplot.dateticks(ax2, datetime, fsize = fsize)
     ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
     fig.autofmt_xdate()
     t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)
@@ -144,7 +144,7 @@ def fileproc():
     
     ##plt.savefig(savetitle,dpi = 100, edgecolor = 'b', bbox_inches = 'tight')
     fig.set_size_inches(figheight*ar,figheight) 
-    plt.savefig(d_filename+'.png')
+    plt.savefig(d_filename+'RSQ.png')
     print 'Done'
     
     fig = plt.figure()
@@ -170,9 +170,10 @@ def fileproc():
     im1 = mplot.backscatter_plot(fig, ax1, ar, datetime,alt[::-1],NRBcopol.T[::-1], (0,.02), fsize = fsize)
     cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
     cbar1.ax.tick_params(labelsize = fsize)
-    mplot.dateticks(ax1, datetime, hours = h_set, fsize = fsize, tcolor = 'w')
+    cbar1.ax.set_ylabel('$[km^{-1}sr^{-1}]$')
+    mplot.dateticks(ax1, datetime, fsize = fsize, tcolor = 'w')
     ax1.set_xticklabels([])
-    t1 = ax1.set_title('NRB', fontsize = fsize+10)
+    t1 = ax1.set_title('Normalized Relative Backscatter (NRB)', fontsize = fsize+10)
     t1.set_y(1.03)
             
     ax2 = fig.add_subplot(2,1,2)
@@ -182,7 +183,7 @@ def fileproc():
     cbar2.set_ticklabels(np.arange(0,0.6,0.1))
     cbar2.ax.tick_params(labelsize = fsize)
     #set axis ranges and tickmarks based on data ranges
-    mplot.dateticks(ax2, datetime, hours = h_set, fsize = fsize)
+    mplot.dateticks(ax2, datetime, fsize = fsize)
     ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
     fig.autofmt_xdate()
     t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)
@@ -190,7 +191,7 @@ def fileproc():
     
     ##plt.savefig(savetitle,dpi = 100, edgecolor = 'b', bbox_inches = 'tight')
     fig.set_size_inches(figheight*ar,figheight) 
-    plt.savefig(d_filename+'.png')
+    plt.savefig(d_filename+'NRB.png')
     print 'Done'
     
     os.chdir(olddir)

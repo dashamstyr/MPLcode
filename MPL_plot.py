@@ -97,14 +97,12 @@ def forceAspect(ax,aspect=1):
 
 def dateticks(ax, axisdat,hours = [], fsize = 21, tcolor = 'k'):
     import matplotlib.pyplot as plt
-    from time import strftime
     
     dold = axisdat[0].strftime('%d')
     hold = axisdat[0].strftime('%H')
     tickmarks = []
     ticklabels = []
     n = 0
-    l = len(axisdat)
 
     
     for d in axisdat:
@@ -114,7 +112,6 @@ def dateticks(ax, axisdat,hours = [], fsize = 21, tcolor = 'k'):
             tickmarks.append(n)
         else:
             htemp = d.strftime('%H')
-            mtemp = d.strftime('%M')
             if not hours:
                 if htemp != hold:
                     ticklabels.append(d.strftime('%H'))
