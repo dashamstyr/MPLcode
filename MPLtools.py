@@ -66,7 +66,7 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
 
     filenames = []
      
-    filenames = tkFileDialog.askopenfilename(title=titlestring, filetypes=[filetype,("All files",".mpl")],multiple='True')
+    filenames = tkFileDialog.askopenfilename(title=titlestring, filetypes=[filetype],multiple='True')
     
     #do nothing if already a python list
     if filenames == "": 
@@ -599,8 +599,11 @@ class MPL:
         from scipy.interpolate import interp1d
         
         dataout = []
-        for n in range(self.header['numchans'][0]):
-            print 'Altitude step resampling in progress ...'
+        rsqout = []
+        nrbout = []
+        
+        print 'Altitude step resampling in progress ...'
+        for n in range(self.header['numchans'][0]):            
             df = self.data[n]
             x = df.columns
             
@@ -626,9 +629,76 @@ class MPL:
                 newvalues[r,:] = f(altrange)
                 r += 1
             dataout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
-            print '... Done!'
-            
+        
         self.data = dataout
+        
+        try:        
+            for n in range(self.header['numchans'][0]): 
+                df = self.rsq[n]
+                x = df.columns
+                
+                minalt = df.columns[0]
+                maxalt = df.columns[-1]
+                
+                if minalt > altrange[0]:
+                    altrange = altrange[altrange >= minalt]
+                    print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
+                
+                if maxalt < altrange[-1]:
+                    altrange = altrange[altrange <= maxalt]
+                    print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
+                        
+                numrows = np.size(df.index)
+                numcols = np.size(altrange)
+            
+                newvalues = np.empty([numrows, numcols])
+                r = 0
+            
+                for row in df.iterrows():
+                    f = interp1d(x,row[1].values)
+                    newvalues[r,:] = f(altrange)
+                    r += 1
+                rsqout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
+            
+            self.rsq=rsqout
+        except AttributeError:
+            print "No Range-Squared Profiles"
+        
+        try:        
+            for n in range(self.header['numchans'][0]): 
+                df = self.NRB[n]
+                x = df.columns
+                
+                minalt = df.columns[0]
+                maxalt = df.columns[-1]
+                
+                if minalt > altrange[0]:
+                    altrange = altrange[altrange >= minalt]
+                    print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
+                
+                if maxalt < altrange[-1]:
+                    altrange = altrange[altrange <= maxalt]
+                    print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
+                        
+                numrows = np.size(df.index)
+                numcols = np.size(altrange)
+            
+                newvalues = np.empty([numrows, numcols])
+                r = 0
+            
+                for row in df.iterrows():
+                    f = interp1d(x,row[1].values)
+                    newvalues[r,:] = f(altrange)
+                    r += 1
+                nrbout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
+            
+            self.NRB=nrbout
+        except AttributeError:
+            print "No NRB Profiles"       
+                
+        print '... Done!'
+            
+        
         self.header['numbins'] = [len(altrange) for db in self.header['numbins']]
         self.header['databins'] = [db - bb for (db,bb) in zip(self.header['numbins'],self.header['backbins'])]
         self.header['bintime'] = [(altrange[1]-altrange[0])/const.c for bt in self.header['bintime']]

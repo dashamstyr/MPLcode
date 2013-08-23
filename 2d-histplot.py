@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import slowhist as h2d
 from matplotlib import cm
-import time, datetime
+
 
 olddir = os.getcwd()
 
@@ -25,9 +25,9 @@ MPLfile = mtools.MPL()
 
 MPLfile.fromHDF(filepath[0])
 
-altrange = MPLfile.NRB[0].columns
+altrange = np.arange(150,8000,30)
 
-#MPLfile.alt_resample(altrange)
+MPLfile.alt_resample(altrange)
 
 copol = MPLfile.NRB[0]
 crosspol = MPLfile.NRB[1]
@@ -133,8 +133,9 @@ fig.canvas.draw()
 #fig.clf()
 #axis = fig.add_subplot(111)
 #hist = axis.hist(depolvals, bins = 100)
+#axis.set_xlabel('Volume Depolaization Ratio')
 #fig.savefig('{0}_{1}-{2}m-1Ddepolhist.png'.format(savetime,altrange[0],altrange[-1]))
 #fig.canvas.draw()
-plt.show()
+#plt.show()
 
 os.chdir(olddir)

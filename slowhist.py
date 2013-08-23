@@ -185,7 +185,7 @@ def findMedian(dataVector,indexList,maskedValue= -9999.):
 def althist(datavalsPy, altvalsPy, numdatbins, histrange=None):
     """
       datavalsPy is an array of data values with each column representing an altitude
-      altvalsPy is a vector of altitudes with ove value for each column
+      altvalsPy is a vector of altitudes with one value for each column
       valspecol is the number of data values per column
       histrange = (min,max) a tuple representing the minimim and maximum data values
       converageMap is a 2-d histogram with the number of points
