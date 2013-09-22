@@ -134,7 +134,6 @@ def MPLtoHDF(filename, appendflag = 'False'):
                 byte_array.fromfile(binfile, 1)
                 intarray16.fromfile(binfile, 3)
                 
-                
                 headerdat['unitnum'] = intarray16[0]
                 headerdat['version'] = intarray16[1]
                 year = intarray16[2]
@@ -192,6 +191,24 @@ def MPLtoHDF(filename, appendflag = 'False'):
                 headerdat['syncrate'] = intarray16[13]  #mini-MPL only, sync pulses seen per second
                 headerdat['firstback'] = intarray16[14] #mini-MPL only, first bin used for background calcs
                 headerdat['headersize2'] = intarray16[15] #size of additional header data (currently unused)
+                
+                if headerdat['headersize2'] > 128:
+                    byte_array.fromfile(binfile, 1)
+                    floatarray.fromfile(binfile, 6)
+                    intarray16.fromfile(binfile, 1)
+                    floatarray.fromfile(binfile, 2)
+                
+                    headerdat['Weatherstat'] = byte_array[4]   #0:weatehr station not used, 1:weather station used
+                    headerdat['Int_temp'] = floatarray[14]  #Temperature inside in deg. Celsius
+                    headerdat['Ext_temp'] = floatarray[15]  #Temp. outside
+                    headerdat['Int_humid'] = floatarray[16] #Humidity inside in %
+                    headerdat['Ext_humid'] = floatarray[17] #Hum. outside
+                    headerdat['Dewpoint'] = floatarray[18]  #dewpoint in deg. Celsius
+                    headerdat['Wnd_spd'] = floatarray[19]  #wind speed in km/h
+                    headerdat['Wnd_dir'] = intarray16[16]  #wind direction in deg.
+                    headerdat['Press'] = floatarray[20]  #Barometric pressure in hPa
+                    headerdat['Rain'] = floatarray[21]  #Rain rate in mm/hr
+                
                 
                 numbins = headerdat['numbins']
                 numchans = headerdat['numchans'] 
@@ -387,6 +404,23 @@ class MPL:
                     headerdat['headersize2'] = intarray16[15] #size of additional header data (currently unused)
                     headerdat['profnum'] = profnum
                     profnum += 1
+                    
+                    if headerdat['headersize2'] > 128:
+                        byte_array.fromfile(binfile, 1)
+                        floatarray.fromfile(binfile, 6)
+                        intarray16.fromfile(binfile, 1)
+                        floatarray.fromfile(binfile, 2)
+                    
+                        headerdat['Weatherstat'] = byte_array[4]   #0:weatehr station not used, 1:weather station used
+                        headerdat['Int_temp'] = floatarray[14]  #Temperature inside in deg. Celsius
+                        headerdat['Ext_temp'] = floatarray[15]  #Temp. outside
+                        headerdat['Int_humid'] = floatarray[16] #Humidity inside in %
+                        headerdat['Ext_humid'] = floatarray[17] #Hum. outside
+                        headerdat['Dewpoint'] = floatarray[18]  #dewpoint in deg. Celsius
+                        headerdat['Wnd_spd'] = floatarray[19]  #wind speed in km/h
+                        headerdat['Wnd_dir'] = intarray16[16]  #wind direction in deg.
+                        headerdat['Press'] = floatarray[20]  #Barometric pressure in hPa
+                        headerdat['Rain'] = floatarray[21]  #Rain rate in mm/hr
 
                     numbins = headerdat['numbins']
                     numchans = headerdat['numchans'] 
@@ -632,7 +666,7 @@ class MPL:
         
         self.data = dataout
         
-        try:        
+        if self.rsq:     
             for n in range(self.header['numchans'][0]): 
                 df = self.rsq[n]
                 x = df.columns
@@ -661,10 +695,10 @@ class MPL:
                 rsqout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
             
             self.rsq=rsqout
-        except AttributeError:
+        else:
             print "No Range-Squared Profiles"
         
-        try:        
+        if self.NRB:       
             for n in range(self.header['numchans'][0]): 
                 df = self.NRB[n]
                 x = df.columns
@@ -693,7 +727,7 @@ class MPL:
                 nrbout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
             
             self.NRB=nrbout
-        except AttributeError:
+        else:
             print "No NRB Profiles"       
                 
         print '... Done!'

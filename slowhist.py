@@ -227,6 +227,7 @@ def althist(datavalsPy, altvalsPy, numdatbins, histrange=None):
     #      coverageMap[i]=len(binVecs[i])
     #     
     #    coverageMap = np.reshape(coverageMap,(numXbins,numYbins))
+        
     retval={}
     retval["coverage"]= coverageMap
     retval["indexList"]= indexArray

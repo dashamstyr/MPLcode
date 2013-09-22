@@ -27,7 +27,7 @@ def fileproc():
     
     #set altitude range and date step sizes
     
-    altrange = np.arange(150,20000,30)#meters
+    altrange = np.arange(150,15000,30)#meters
     timestep = '60S' #seconds
     
     #check to see if each file has been processed before and separate processed
