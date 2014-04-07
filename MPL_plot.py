@@ -1,4 +1,4 @@
-def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
+def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, numsteps, fsize = 21):
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
     
@@ -26,8 +26,11 @@ def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
                   (0.34, 1, 1),
                   (0.65,0, 0),
                   (1, 0, 0))}
+      
     
-    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,20)
+    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,numsteps)
+    my_cmap.set_over('w')
+    my_cmap.set_under('k')
     
     im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
     forceAspect(ax,ar)
@@ -45,7 +48,7 @@ def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
 
     return im
 
-def backscatter_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
+def backscatter_plot(fig, ax, ar, xdata, ydata, data, vrange, numsteps, fsize = 21):
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
     import numpy as np
@@ -74,8 +77,11 @@ def backscatter_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
                   (0.34, 1, 1),
                   (0.65,0, 0),
                   (1, 0, 0))}
+                  
     
-    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,20)
+    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,numsteps)
+    my_cmap.set_over('w')
+    my_cmap.set_under('k')
     
     im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
     forceAspect(ax,ar)       
@@ -242,13 +248,14 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import numpy as np
     
-    altrange = np.arange(150,20000,30)
-    timestep = '1M'
+
     hours = ['06', '12', '18']
 
-    os.chdir('C:\SigmaMPL\DATA\Processed')
+    os.chdir('C:\SigmaMPL\DATA')
 
     filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
+    
+    os.chdir(os.path.dirname(filepath[0]))
 
     if len(filepath) == 1:   
         [path,startfile] = os.path.split(filepath[0])
@@ -261,7 +268,6 @@ if __name__ == '__main__':
     for f in filepath:  
         MPLtemp = mtools.MPL()
         MPLtemp.fromHDF(f)        
-        MPLtemp.alt_resample(altrange)
         
         try:
             MPLevent.append(MPLtemp)
@@ -270,26 +276,13 @@ if __name__ == '__main__':
 
     MPLevent.header.sort_index()
     
-    for n in range(MPLevent.header['numchans'][0]):
-        NRB = MPLevent.NRB[n]
-        NRB = NRB.sort_index()
-    
-    MPLevent.time_resample(timestep)  
-
     copol = MPLevent.NRB[0]
-    crosspol = MPLevent.NRB[1]
+    depol = MPLevent.depolrat[0]
     
-    depolMPL = crosspol.values/copol.values
-    
-    depolvals = depolMPL/(depolMPL+1)
-    
-    depol = pan.DataFrame(depolvals,index = copol.index, columns = copol.columns)
-    #depol = imtools.blur_image(depol,(7,7), kernel ='Flat')
     
     datetime = depol.index
     alt = depol.columns      
     
-    #create figure and plot image of depolarization ratios
     #create figure and plot image of depolarization ratios
     fsize = 18 #baseline font size
     ar = 2.0  #aspect ratio
@@ -303,13 +296,29 @@ if __name__ == '__main__':
     h_set = range(1,25)
     h_set = map(str,h_set)
     
+    NRB_min = 0
+    NRB_max = 1.0
+    NRB_tickstep = 0.1
+    NRB_res = 100
+    
+    depol_min = 0
+    depol_max = 0.5
+    depol_tickstep = 0.1
+    depol_res = 20
+    
+    
     print 'Generating Figure'
-    os.chdir('../Figures')
+    try:
+        os.chdir('../Figures')
+    except WindowsError:
+        os.mkdir('../Figures')
+        os.chdir('../Figures')
+        
     ax1 = fig.add_subplot(2,1,1)
-    im1 = backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (0,.02), fsize = fsize)
+    im1 = backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (NRB_min,NRB_max), NRB_res, fsize = fsize)
     cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
-    cbar1.set_ticks(np.arange(0,0.024,0.004))
-    cbar1.set_ticklabels(np.arange(0,0.024,0.004))
+    cbar1.set_ticks(np.arange(NRB_min,NRB_max+NRB_tickstep,NRB_tickstep))
+    cbar1.set_ticklabels(np.arange(NRB_min,NRB_max+NRB_tickstep,NRB_tickstep))
     cbar1.ax.tick_params(labelsize = fsize)
     cbar1.ax.set_ylabel('$[counts*km^{2}/(\mu s*\mu J)$')
     dateticks(ax1, datetime, hours = hours, fsize = fsize, tcolor = 'w')
@@ -318,10 +327,10 @@ if __name__ == '__main__':
     t1.set_y(1.03)
             
     ax2 = fig.add_subplot(2,1,2)
-    im2 = depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], (0,0.5), fsize = fsize)
+    im2 = depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], (depol_min,depol_max), depol_res, fsize = fsize)
     cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6)
-    cbar2.set_ticks(np.arange(0,0.6,0.1))
-    cbar2.set_ticklabels(np.arange(0,0.6,0.1))
+    cbar2.set_ticks(np.arange(depol_min,depol_max+depol_tickstep,depol_tickstep))
+    cbar2.set_ticklabels(np.arange(depol_min,depol_max+depol_tickstep,depol_tickstep))
     cbar2.ax.tick_params(labelsize = fsize)
     #set axis ranges and tickmarks based on data ranges
     dateticks(ax2, datetime, hours = hours, fsize = fsize)

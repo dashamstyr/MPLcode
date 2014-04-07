@@ -89,7 +89,7 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
 
     
     root.destroy()
-    
+      
     
 def MPLtoHDF(filename, appendflag = 'False'):
     import numpy as np
@@ -263,7 +263,8 @@ class MPL:
         
         self.data = [] #slot for lidar raw data array
         self.rsq = []  #slot for range corrected, background subtracted data
-        self.NRB = []  #slot for Normalized Relative Backscatter array        
+        self.NRB = []  #slot for Normalized Relative Backscatter array 
+        self.depolrat = []  #slot fo depol ratio array
         self.header = []  #slot for header data
         
 
@@ -424,7 +425,7 @@ class MPL:
 
                     numbins = headerdat['numbins']
                     numchans = headerdat['numchans'] 
-                    altstep = headerdat['bintime']*const.c #altitude step in meters
+                    altstep = headerdat['bintime']*const.c/2 #altitude step in meters
                     maxalt = numbins*altstep
                     minalt = headerdat['rangecal']
                     altrange = np.arange(minalt,maxalt,altstep,dtype='float')
@@ -480,6 +481,12 @@ class MPL:
             self.NRB = [copoldat_NRB,crosspoldat_NRB]
         except KeyError:
             print "Warning: No NRB file"
+        
+        try:
+            self.depolrat = [pan.read_hdf(filename,'depolrat')]
+        except KeyError:
+            print "Warning: No Depol Ratio file"
+
 
         return self
     
@@ -620,6 +627,10 @@ class MPL:
             store['copol_NRB'] = df_copol
             store['crosspol_NRB'] = df_crosspol
         
+        if self.depolrat:
+            df_depolrat = self.depolrat[0]
+            store['depolrat'] = df_depolrat
+        
         store.close()
 
     
@@ -728,7 +739,38 @@ class MPL:
             
             self.NRB=nrbout
         else:
-            print "No NRB Profiles"       
+            print "No NRB Profiles"    
+
+        if self.depolrat:       
+            df = self.depolrat[0]
+            x = df.columns
+            
+            minalt = df.columns[0]
+            maxalt = df.columns[-1]
+            
+            if minalt > altrange[0]:
+                altrange = altrange[altrange >= minalt]
+                print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
+            
+            if maxalt < altrange[-1]:
+                altrange = altrange[altrange <= maxalt]
+                print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
+                    
+            numrows = np.size(df.index)
+            numcols = np.size(altrange)
+        
+            newvalues = np.empty([numrows, numcols])
+            r = 0
+        
+            for row in df.iterrows():
+                f = interp1d(x,row[1].values)
+                newvalues[r,:] = f(altrange)
+                r += 1
+            nrbout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
+            
+            self.depolrat=nrbout
+        else:
+            print "No Depol Ratio Profiles"  
                 
         print '... Done!'
             
@@ -776,20 +818,58 @@ class MPL:
 
         
         self.header = pan.DataFrame(temphead)
-        
+        print 'Time step regularization in progress ...'
         for n in range(self.header['numchans'][0]):    
-            print 'Time step regularization in progress ...'
-            
+            df = self.data[n]
+            print "Regularizing raw data for channel "+str(n)
             if timerange:
                 start_time = timerange[0]
                 end_time = timerange[1]
-                self.data[n] = self.data[n][(self.data[n].index>=start_time) & (self.data[n].index<=end_time)]
+                df = df[(df.index>=start_time) & (df.index<=end_time)]
         
-            self.data[n] = self.data[n].resample(timestep, how = datamethod)
+            df = df.resample(timestep, how = datamethod)
+            self.data[n] = df
         
             print '... Done!'
         
+        if self.rsq:
+            for n in range(self.header['numchans'][0]):    
+                df = self.rsq[n]
+                print "Regularizing rsq data for channel "+str(n)
+                if timerange:
+                    start_time = timerange[0]
+                    end_time = timerange[1]
+                    df = df[(df.index>=start_time) & (df.index<=end_time)]
+            
+                df = df.resample(timestep, how = datamethod)
+                self.rsq[n] = df
+                print '... Done!'
+
+        if self.NRB:
+            for n in range(self.header['numchans'][0]):    
+                df = self.NRB[n]
+                print "Regularizing NRB data for channel "+str(n)
+                if timerange:
+                    start_time = timerange[0]
+                    end_time = timerange[1]
+                    df = df[(df.index>=start_time) & (df.index<=end_time)]
+            
+                df = df.resample(timestep, how = datamethod)
+                self.NRB[n] = df
+                print '... Done!'      
+
+        if self.depolrat:  
+            df = self.depolrat[0]
+            print "Regularizing depol data"
+            if timerange:
+                start_time = timerange[0]
+                end_time = timerange[1]
+                df = df[(df.index>=start_time) & (df.index<=end_time)]
         
+            df = df.resample(timestep, how = datamethod)
+            self.depolrat[0] = df
+            print '... Done!'     
+            
         return self
         
     def range_cor(self):
@@ -814,119 +894,266 @@ class MPL:
         to a range-corrected set of mini-MPL data to convert from counts to attenuated backscatter
         """
         import numpy as np
-        import array
+        import array,struct
         import os
         from copy import deepcopy
         import matplotlib.pyplot as plt
+        import datetime
         
         olddir = os.getcwd()
-        newdir = 'C:\SigmaMPL'
-        os.chdir(newdir)
+        try:
+            newdir = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\Calibration File Archive'
+            os.chdir(newdir)
+        except WindowsError:
+            newdir = 'C:\SigmaMPL'
+            os.chdir(newdir)
+        
         
         allfiles = os.listdir(newdir)
-        
-        for f in allfiles:
-            if 'deadtime.bin' in f:
-                deadtimefile = f
-            if 'overlap.bin' in f:
-                overlapfile = f
-            if 'afterpulse.bin' in f:
-                afterpulsefile = f
-        
-        with open(deadtimefile,'rb') as binfile:
-            deadtimedat = array.array('d')
-            while True:        
-                try:
-                    deadtimedat.fromfile(binfile, 1)
-                except EOFError:
-                    break
-            
-        coeffs = np.array(deadtimedat[::-1])
-        
-        MPLout = deepcopy(self.data)
-        
-        if showplots:
-            temp = self.data[0].values
-            maxval = temp.max()
-            numsteps = maxval/100.
-            x = np.arange(0,maxval,numsteps)
-            y = np.polynomial.polynomial.polyval(x, coeffs)
-            fig = plt.figure()
-            fig.clf()
-            ax = fig.add_subplot(111)
-            ax.plot(x,y)
-            ax.set_title('Deadtime Correction Curve')
-            plt.show()
-        
-        
-        deadtimecor = np.empty([self.header['numchans'][0],len(MPLout[0].index),len(MPLout[0].columns)])
-        for n in range(self.header['numchans'][0]):
-            for i in range(len(MPLout[n].index)):
-                deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
+        #if data were collected before June 2013, they were collected with MPL5008 and require
+        #the associated calibration files
+        if self.header.index[0] < datetime.datetime(2013,6,1):
     
-        with open(afterpulsefile, 'rb') as binfile:
-            afterpulsedat = array.array('d')
-            
-            filedat = os.stat(afterpulsefile)
-            numvals = filedat.st_size/8
-            afterpulsedat.fromfile(binfile,numvals)
-        
-        numpairs = (numvals-1)/2
-        mean_energy = np.array(afterpulsedat[0])
-        aprange = np.array(afterpulsedat[1:numpairs+1])#*1000.0
-        apvals = np.array(afterpulsedat[numpairs+1:])
-        
-        if showplots:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.plot(aprange[:100],apvals[:100])
-            ax.set_title('Afterpulse Correction')
-            plt.show()
-        
-        bg = [self.header['bg_avg2'],self.header['bg_avg1']]
-          
-        for n in range(self.header['numchans'][0]):
-            altvals = np.array(MPLout[n].columns, dtype='float')
-            interp_afterpulse = np.interp(altvals,aprange,apvals)
-            
-            for i in range(len(MPLout[n].index)):
-                MPLout[n].iloc[i] = (MPLout[n].iloc[i] - interp_afterpulse - bg[n][i])*deadtimecor[n,i]
+            deadtimefile = 'MMPL5008_deadtime.bin'
+            overlapfile = 'MMPL5008_overlap.bin'
+            afterpulsefile = 'MMPL5008_afterpulse.bin'
                 
-        with open(overlapfile, 'rb') as binfile:
-            overlapdat = array.array('d')
-             
-            filedat = os.stat(overlapfile)
-            numvals = filedat.st_size/8
-            overlapdat.fromfile(binfile,numvals)
         
-        numpairs = numvals/2
-        overrange = np.array(overlapdat[:numpairs])#*1000
-        overvals = np.array(overlapdat[numpairs:])    
+            with open(deadtimefile,'rb') as binfile:
+                deadtimedat = array.array('d')
+                while True:        
+                    try:
+                        deadtimedat.fromfile(binfile, 1)
+                    except EOFError:
+                        break
+                
+            coeffs = np.array(deadtimedat[::-1])
+            
+            MPLout = deepcopy(self.data)
+            
+            if showplots:
+                temp = self.data[0].values
+                maxval = temp.max()
+                numsteps = maxval/100.
+                x = np.arange(0,maxval,numsteps)
+                y = np.polynomial.polynomial.polyval(x, coeffs)
+                fig = plt.figure()
+                fig.clf()
+                ax = fig.add_subplot(111)
+                ax.plot(x,y)
+                ax.set_title('Deadtime Correction Curve')
+                plt.show()
+            
+            
+            deadtimecor = np.empty([self.header['numchans'][0],len(MPLout[0].index),len(MPLout[0].columns)])
+            for n in range(self.header['numchans'][0]):
+                for i in range(len(MPLout[n].index)):
+                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
+        
+            with open(afterpulsefile, 'rb') as binfile:
+                afterpulsedat = array.array('d')
+                
+                filedat = os.stat(afterpulsefile)
+                numvals = filedat.st_size/8
+                afterpulsedat.fromfile(binfile,numvals)
+            
+            numpairs = (numvals-1)/2
+            mean_energy = np.array(afterpulsedat[0])
+            aprange = np.array(afterpulsedat[1:numpairs+1])*1000.0
+            apvals = np.array(afterpulsedat[numpairs+1:])
+            
+            if showplots:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(aprange[:100],apvals[:100])
+                ax.set_title('Afterpulse Correction')
+                plt.show()
+            
+            bg = [self.header['bg_avg2'],self.header['bg_avg1']]
+              
+            for n in range(self.header['numchans'][0]):
+                altvals = np.array(MPLout[n].columns, dtype='float')
+                interp_afterpulse = np.interp(altvals,aprange,apvals)
+                
+                for i in range(len(MPLout[n].index)):
+                    MPLout[n].iloc[i] = MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i]
+                    
+            with open(overlapfile, 'rb') as binfile:
+                overlapdat = array.array('d')
+                 
+                filedat = os.stat(overlapfile)
+                numvals = filedat.st_size/8
+                overlapdat.fromfile(binfile,numvals)
+            
+            numpairs = numvals/2
+            overrange = np.array(overlapdat[:numpairs])*1000
+            overvals = np.array(overlapdat[numpairs:])    
+        
+            if showplots:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(overrange,overvals)
+                ax.set_title('Overlap Correction')
+                plt.show()
+                
+            energy = self.header['energy']
+            
+            altvals = np.array(MPLout[0].columns, dtype='float')
+            interp_overlap = np.interp(altvals,overrange,overvals)
+                
+            for v in range(len(altvals)):
+                if altvals[v] > max(overrange):
+                    interp_overlap[v] = 1.0
+            
+            for n in range(self.header['numchans'][0]):     
+                rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2
+                for i in range(len(MPLout[n].index)):
+                    MPLout[n].iloc[i] = (MPLout[n].iloc[i]/(interp_overlap*energy[i]))*rsq
+            
+            os.chdir(olddir)
+            self.NRB = MPLout
+            return self
+        else:        
+            deadtimefile = 'MMPL5012_SPCM22625_deadtime7.bin'
+            overlapfile = 'MMPL5012_Overlap_201307310000.bin'
+            afterpulsefile = 'MMPL5012_Afterpulse_201308051500.mpl.bin'
     
-        if showplots:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.plot(overrange,overvals)
-            ax.set_title('Overlap Correction')
-            plt.show()
+            with open(deadtimefile,'rb') as binfile:
+                deadtimedat = array.array('f')
+                while True:        
+                    try:
+                        deadtimedat.fromfile(binfile, 1)
+                    except EOFError:
+                        break
+                
+            coeffs = np.array(deadtimedat[::-1])
             
-        energy = self.header['energy']
-        
-        altvals = np.array(MPLout[0].columns, dtype='float')
-        interp_overlap = np.interp(altvals,overrange,overvals)
+            MPLout = deepcopy(self.data)
             
-        for v in range(len(altvals)):
-            if altvals[v] > max(overrange):
-                interp_overlap[v] = 1.0
+            if showplots:
+                temp = self.data[0].values
+                maxval = temp.max()
+                numsteps = maxval/100.
+                x = np.arange(0,maxval,numsteps)
+                y = np.polynomial.polynomial.polyval(x, coeffs)
+                fig = plt.figure()
+                fig.clf()
+                ax = fig.add_subplot(111)
+                ax.plot(x,y)
+                ax.set_title('Deadtime Correction Curve')
+                plt.show()
+            
+            
+            deadtimecor = np.empty([self.header['numchans'][0],len(MPLout[0].index),len(MPLout[0].columns)])
+            for n in range(self.header['numchans'][0]):
+                for i in range(len(MPLout[n].index)):
+                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
         
-        for n in range(self.header['numchans'][0]):     
-            rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2
-            for i in range(len(MPLout[n].index)):
-                MPLout[n].iloc[i] = (MPLout[n].iloc[i]/(interp_overlap*energy[i]))*rsq
+            with open(afterpulsefile, 'rb') as binfile:
+                aprange = array.array('d')  #array of range values
+                apvals_copol = array.array('d')  #array of correction values for copol
+                apvals_crosspol = array.array('d')  #array of correction values for crosspol
+                
+                
+                
+                temp = binfile.read(4)
+                apheader = temp
+                temp = binfile.read(2)
+                apversion = struct.unpack('H',temp)[0] #version number for correction file
+                temp = binfile.read(1)
+                apnumchan = struct.unpack('B',temp)[0] #number of channels
+                temp = binfile.read(4)
+                apnumbins = struct.unpack('I',temp)[0] #number of correction bins
+                temp = binfile.read(8)
+                apenergy = struct.unpack('d',temp)[0] #laser energy during calibration in uJ
+                
+                if apversion != 3:
+                    print 'WARNING!  This version of calibration file might be incompatible!'
+                
+                   
+                if apnumchan == 2:
+                    temp = binfile.read(8)
+                    apbg_copol = struct.unpack('d',temp)[0]
+                    temp = binfile.read(8)
+                    apbg_crosspol = struct.unpack('d',temp)[0]
+                    
+                    aprange.fromfile(binfile,apnumbins)
+                    aprange = [n*1000 for n in aprange] # convert range values to meters
+                    apvals_copol.fromfile(binfile,apnumbins)
+                    copol_norm = [n/apenergy for n in apvals_copol] #convert to counts/us
+                    apvals_crosspol.fromfile(binfile,apnumbins)
+                    crosspol_norm = [n/apenergy for n in apvals_crosspol] #convert to counts/us
+                    apbg = [apbg_copol,apbg_crosspol]
+                    apvals = [copol_norm,crosspol_norm]
+                else:
+                    print "Warning - wrong number of channels detected!"
+            
+            if showplots:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(aprange[:100],apvals[0][:100],aprange[:100],apvals[1][:100])
+                ax.set_title('Afterpulse Correction')
+                plt.show()
+            
+            bg = [self.header['bg_avg2'],self.header['bg_avg1']]
+            energy= self.header['energy']
+            
+            for n in range(apnumchan):
+                altvals = np.array(MPLout[n].columns, dtype='float') #data altitudes in m
+                interp_afterpulse = np.interp(altvals,aprange,apvals[n])
+                
+                for i in range(len(MPLout[n].index)):
+                    MPLout[n].iloc[i] = (MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i])/energy[i]
+                    
+            with open(overlapfile, 'rb') as binfile:
+                overlapdat = array.array('d')
+                 
+                filedat = os.stat(overlapfile)
+                numvals = filedat.st_size/8
+                overlapdat.fromfile(binfile,numvals)
+            
+            numpairs = numvals/2
+            overrange = np.array(overlapdat[:numpairs])*1000
+            overvals = np.array(overlapdat[numpairs:])    
         
-        os.chdir(olddir)
-        self.NRB = MPLout
+            if showplots:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(overrange,overvals)
+                ax.set_title('Overlap Correction')
+                plt.show()
+                
+            
+            altvals = np.array(MPLout[0].columns, dtype='float')
+            interp_overlap = np.interp(altvals,overrange,overvals)
+                
+            for v in range(len(altvals)):
+                if altvals[v] > max(overrange):
+                    interp_overlap[v] = 1.0
+            
+            for n in range(self.header['numchans'][0]):     
+                rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2  #range in km for rsquared correction
+                for i in range(len(MPLout[n].index)):
+                    MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap            
+            
+            os.chdir(olddir)
+            self.NRB = MPLout
+            return self
+    
+    def calculate_depolrat(self):
+        import pandas as pan        
+        copol = self.NRB[0]
+        crosspol = self.NRB[1]
+        
+        depolMPL = crosspol.values/copol.values
+        
+        depolvals = depolMPL/(depolMPL+1)
+        
+        self.depolrat.append(pan.DataFrame(depolvals,index = copol.index, columns = copol.columns))
+        
         return self
+    
+           
       
 
 if __name__ == '__main__':
