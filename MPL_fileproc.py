@@ -1,4 +1,4 @@
-def fileproc(newdir, altrange = [], timestep = []):
+def fileproc(newdir, altrange = np.arange(150,15000,30), timestep = '60S'):
 #    clearall()
     import pandas as pan
     import numpy as np
@@ -27,8 +27,8 @@ def fileproc(newdir, altrange = [], timestep = []):
     
     #set altitude range and date step sizes
     
-#    altrange = np.arange(150,15000,30)#meters
-#    timestep = '600S' #seconds
+    #meters
+     #seconds
 #    starttime = datetime(2013,9,17,0,0,0)
 #    endtime = datetime(2013,9,18,0,0,0)
 #    timerange1 = [starttime,endtime]
@@ -46,8 +46,7 @@ def fileproc(newdir, altrange = [], timestep = []):
     for r in rawfiles:
         MPLdat_temp = mtools.MPL()
         MPLdat_temp.fromMPL(r)
-        if len(altrange) > 0:
-            MPLdat_temp.alt_resample(altrange)
+        MPLdat_temp.alt_resample(altrange)
     
         try:
             MPLdat_event.append(MPLdat_temp)
@@ -64,9 +63,7 @@ def fileproc(newdir, altrange = [], timestep = []):
 #    start = data.index[0]
 #    end = data.index[-1]
     
-    if len(timestep) > 0:
-        MPLdat_event.time_resample(timestep)
-    
+    MPLdat_event.time_resample(timestep)
     MPLdat_event.range_cor()    
     MPLdat_event.calculate_NRB(showplots = False)
     MPLdat_event.calculate_depolrat()
@@ -186,14 +183,9 @@ def clearall():
         
 if __name__ == '__main__':
     import MPLtools as mtools
-    import os
-    import numpy as np
     
-    os.chdir('C:\SigmaMPL\DATA')
     procdir = mtools.set_dir('Select folder to process files from')
-    altrange = np.arange(150,8000,30)
-    timestep = '5Min'
-    fileproc(procdir, altrange, timestep)
+    fileproc(procdir, altrange = np.arange(150,10030,30),timestep = '60S')
     
 #    plotfile = mtools.get_files('Select File to Plot', filetype = ('.h5', '*.h5'))
 #    quickplot(plotfile)

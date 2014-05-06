@@ -113,7 +113,7 @@ def MPLtoHDF(filename, appendflag = 'False'):
         while True:
             try:
                 intarray16 = array.array('H')
-                intarray32 = array.array('L')
+                intarray32 = array.array('I') # L is 8 byte on Xenon
                 floatarray = array.array('f')
                 byte_array = array.array('B')
                 copolvals = array.array('f')  
@@ -323,7 +323,7 @@ class MPL:
             while True:
                 try:
                     intarray16 = array.array('H')
-                    intarray32 = array.array('L')
+                    intarray32 = array.array('I') # L is 8 byte on Xenon
                     floatarray = array.array('f')
                     byte_array = array.array('B')
                     copolvals = array.array('f')  
@@ -367,6 +367,8 @@ class MPL:
                     
                     headerdat['bg_avg1'] = floatarray[0] #mean background signal value for channel 1
                     headerdat['bg_std1'] = floatarray[1] #standard deviation of backgruond signal for channel 1
+            
+                    # print intarray16.itemsize, intarray32.itemsize # L vs I
             
                     headerdat['numchans'] = intarray16[8] #number of channels
                     headerdat['numbins'] = intarray32[8] #total number of bins per channel
@@ -818,58 +820,20 @@ class MPL:
 
         
         self.header = pan.DataFrame(temphead)
-        print 'Time step regularization in progress ...'
+        
         for n in range(self.header['numchans'][0]):    
-            df = self.data[n]
-            print "Regularizing raw data for channel "+str(n)
+            print 'Time step regularization in progress ...'
+            
             if timerange:
                 start_time = timerange[0]
                 end_time = timerange[1]
-                df = df[(df.index>=start_time) & (df.index<=end_time)]
+                self.data[n] = self.data[n][(self.data[n].index>=start_time) & (self.data[n].index<=end_time)]
         
-            df = df.resample(timestep, how = datamethod)
-            self.data[n] = df
+            self.data[n] = self.data[n].resample(timestep, how = datamethod)
         
             print '... Done!'
         
-        if self.rsq:
-            for n in range(self.header['numchans'][0]):    
-                df = self.rsq[n]
-                print "Regularizing rsq data for channel "+str(n)
-                if timerange:
-                    start_time = timerange[0]
-                    end_time = timerange[1]
-                    df = df[(df.index>=start_time) & (df.index<=end_time)]
-            
-                df = df.resample(timestep, how = datamethod)
-                self.rsq[n] = df
-                print '... Done!'
-
-        if self.NRB:
-            for n in range(self.header['numchans'][0]):    
-                df = self.NRB[n]
-                print "Regularizing NRB data for channel "+str(n)
-                if timerange:
-                    start_time = timerange[0]
-                    end_time = timerange[1]
-                    df = df[(df.index>=start_time) & (df.index<=end_time)]
-            
-                df = df.resample(timestep, how = datamethod)
-                self.NRB[n] = df
-                print '... Done!'      
-
-        if self.depolrat:  
-            df = self.depolrat[0]
-            print "Regularizing depol data"
-            if timerange:
-                start_time = timerange[0]
-                end_time = timerange[1]
-                df = df[(df.index>=start_time) & (df.index<=end_time)]
         
-            df = df.resample(timestep, how = datamethod)
-            self.depolrat[0] = df
-            print '... Done!'     
-            
         return self
         
     def range_cor(self):
@@ -895,19 +859,17 @@ class MPL:
         """
         import numpy as np
         import array,struct
-        import os
+        import os,sys
         from copy import deepcopy
         import matplotlib.pyplot as plt
         import datetime
         
         olddir = os.getcwd()
-        try:
+        if sys.platform == 'win32':
             newdir = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\Calibration File Archive'
-            os.chdir(newdir)
-        except WindowsError:
-            newdir = 'C:\SigmaMPL'
-            os.chdir(newdir)
-        
+        else:
+            newdir = '/data/lv1/pcottle/MPLCalibration'
+        os.chdir(newdir)
         
         allfiles = os.listdir(newdir)
         #if data were collected before June 2013, they were collected with MPL5008 and require

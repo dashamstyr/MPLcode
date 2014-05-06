@@ -14,15 +14,17 @@ import pandas as pan
 import datetime,time
 import numpy as np
 import glob
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 
-lib = 'C:\\Users\\dashamstyr\\Dropbox\\Python_Scripts\\GIT_Repos'
-datalib = 'C:\\SigmaMPL\\DATA'
-figurelib = 'C:\\SigmaMPL\\DATA\\Figures'
+lib = '/data/lv1/pcottle'
+datalib = '/data/lv1/pcottle/MPLData'
+figurelib = '/data/lv1/pcottle/MPLFigures'
 
 try:
-    sys.path.append(os.path.join(lib, 'MPLcode'))
+    sys.path.append(os.path.join(lib, 'MPLCode'))
     from MPLcode import MPLtools as mtools
     from MPLcode import MPL_plot as mplot   
 except ImportError:
@@ -87,7 +89,7 @@ current_time = datetime.datetime.now()
 
 try:
     os.chdir('Processed')
-except WindowsError:
+except OSError: # except WindowsError:
     os.makedirs('Processed')
     os.chdir('Processed')
 
