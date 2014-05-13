@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Apr 14 13:04:21 2014
-
+Updated on May 7,2014
 @author: User
 """
 import os, sys
@@ -9,19 +9,21 @@ import pandas as pan
 import datetime,time
 import numpy as np
 import glob
-import matplotlib
-from matplotlib import pyplot as plt
+
 
 
 #Step 1: Set folders for locations of unsorted raw data files, python code, webdata folder
-if sys.platform == 'win32':    
-#    matplotlib.use('Agg')    
+if sys.platform == 'win32':   
+    import matplotlib
+    from matplotlib import pyplot as plt    
     datalib = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\MPLData\Raw_Files'
     sitelib = 'C:\Users\dashamstyr\Dropbox\MPL website\WebData'
     codelib = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\MPLCode'
     historyfile = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\MPLData\MPL_location_history.txt'
-else:
+else:    
+    import matplotlib
     matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
     datalib = '/data/lv1/pcottle/MPLData/Raw_Files'
     sitelib = '/data/lv1/WebData'
     codelib = '/data/lv1/pcottle/MPLCode'
@@ -31,17 +33,17 @@ try:
     sys.path.append(codelib)
     from MPLcode import MPLtools as mtools
     reload(MPLtools)
-    from MPLcode import HTML_tools as htools 
+    from MPLcode import HTMLtools as htools 
     reload(HTML_tools)
-    from MPLcode import MPL_plot as mplot
+    from MPLcode import MPLplot as mplot
 except ImportError:
     
     try:
         import MPLtools as mtools
         reload(mtools)
-        import HTML_tools as htools
+        import HTMLtools as htools
         reload(htools)
-        import MPL_plot as mplot
+        import MPLplot as mplot
     
     except ImportError:
         raise Exception('You havent specified where your modules are located!')
@@ -53,31 +55,6 @@ olddir=os.getcwd()
 
 altrange = np.arange(150,15000,30)#meters
 timestep = '60S' #seconds
-
-#set ranges and tickmarks for plots
-copol_min = 0.0
-copol_max = 1.0
-copol_step = 5
-copolticks = np.linspace(copol_min,copol_max,copol_step)
-
-depol_min = 0.0
-depol_max = 0.5
-depol_step = 5
-depolticks = np.linspace(depol_min,depol_max,depol_step)
-
-# set hour markers for time axis
-hours = ['03','06','09','12','15','18','21']
-h_set = range(1,25)
-h_set = map(str,h_set)
-
-
-#set font sizes, styles and figure size and aspect ratio
-        
-fsize = 18 #baseline font size
-ar = 2.0  #aspect ratio
-figheight = 12 #inches
-
-plt.rc('font', family='serif', size=fsize)
 
 #----------------------------------------------------------------------
 
@@ -123,7 +100,6 @@ filenames,filedates = htools.listdates(rawfiles)
 newday = filedates[0]
 dailympl =[]
 
-figcount=0
 for f,date in zip(filenames,filedates):
     
     #Step 4a: Bundle files by day and generate new processed filename YYYYMMDD.h5 (&.png) 
@@ -137,13 +113,13 @@ for f,date in zip(filenames,filedates):
         tempday = date[2]
         #Check if .h5 file exists
         
-        savefilename = tempyear+tempmonth+tempday
+        savefilename = '{0}{1}{2}'.format(tempyear,tempmonth,tempday)
         
         if savefilename in procfiles:
             continue
         else:        
             saveloc = htools.findloc(f,location_dict)
-            savefoldername = tempyear+'-'+tempmonth
+            savefoldername = '{0}-{1}'.format(tempyear,tempmonth)
             
             loclib = os.path.join(sitelib,saveloc)
             procdatlib = os.path.join(loclib,'Data_Files',savefoldername)
@@ -156,10 +132,9 @@ for f,date in zip(filenames,filedates):
 #            MPLdat_event = mtools.MPL()
             
             for mpl in dailympl:
-                print os.getcwd()
                 MPLdat_temp = mtools.MPL()
                 MPLdat_temp.fromMPL(mpl)
-                MPLdat_temp.alt_resample(altrange)
+                MPLdat_temp.alt_resample(altrange, verbose=False)
             
                 try:
                     MPLdat_event.append(MPLdat_temp)
@@ -173,61 +148,28 @@ for f,date in zip(filenames,filedates):
                 data = MPLdat_event.data[n]
                 data = data.sort_index()
             
-            MPLdat_event.time_resample(timestep)
+            MPLdat_event.time_resample(timestep,verbose=False)
             MPLdat_event.range_cor()    
             MPLdat_event.calculate_NRB(showplots = False)
             MPLdat_event.calculate_depolrat()
                
             #Now generate a new figure.
+               
+            kwargs = {'saveplot':True,'showplot':False,'verbose':False,
+            'savefilepath':procimglib,'savefilename':'{0}.png'.format(savefilename)}
+        
+            mplot.doubleplot(MPLdat_event,**kwargs)
             
-            copol = MPLdat_event.NRB[0]
-            depol = MPLdat_event.depolrat[0]
-            
-            alt = copol.columns
-            time_index = copol.index
-            
-            fig = plt.figure(figcount)        
-            ax1 = fig.add_subplot(2,1,1)
-            im1 = mplot.backscatter_plot(fig, ax1, ar, time_index,alt[::-1],copol.T[::-1], (copol_min,copol_max), fsize = fsize)
-            cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
-            cbar1.set_ticks(copolticks)
-            cbar1.set_ticklabels(copolticks)
-            cbar1.ax.tick_params(labelsize = fsize)
-            cbar1.ax.set_ylabel('$[counts*km^{2}/(\mu s*\mu J)$')
-            mplot.dateticks(ax1, time_index, hours = hours, fsize = fsize, tcolor = 'w')
-            ax1.set_xticklabels([])
-            t1 = ax1.set_title('Normalized Relative Backscatter', fontsize = fsize+10)
-            t1.set_y(1.03)
-                    
-            ax2 = fig.add_subplot(2,1,2)
-            im2 = mplot.depol_plot(fig, ax2, ar, time_index,alt[::-1],depol.T[::-1], (depol_min,depol_max), fsize = fsize)
-            cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6)
-            cbar2.set_ticks(depolticks)
-            cbar2.set_ticklabels(depolticks)
-            cbar2.ax.tick_params(labelsize = fsize)
-            #set axis ranges and tickmarks based on data ranges
-            mplot.dateticks(ax2, time_index, hours = hours, fsize = fsize)
-            ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
-            fig.autofmt_xdate()
-            t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)
-            t2.set_y(1.03)    
-            
-            
-            fig.set_size_inches(figheight*ar,figheight) 
+            plt.close('all')
+
             #Step 4c: Switch to YYYY-MM folder (create if not there already) and save .h5, then repeat for .png
             
             os.chdir(procdatlib)
-            MPLdat_event.save_to_HDF(savefilename+'.h5')
-            os.chdir(procimglib)
-            fig.canvas.print_figure(savefilename+'.png',dpi = 100, edgecolor = 'b', bbox_inches = 'tight')
+            MPLdat_event.save_to_HDF('{0}.h5'.format(savefilename))
             
-            #reset newday, dailympl,and MPLdat_event for next iteration
-            fig.clf()
-            del fig, MPLdat_event
             newday = date    
             dailympl = []
             dailympl.append(os.path.join(datalib,f))
-            figcount+=1
             os.chdir(olddir)
 
 
