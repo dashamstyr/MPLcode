@@ -4,30 +4,47 @@ def depol_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
     
     #set colormap to be the same as 'jet' with the addition of white color for
     #depol ratios set to identically zero because they couldn't be calculated
-    cdict = {'red': ((0,0,0),
-                     (0.0099,0,0),
-                     (0.01, 1, 0),
+    cdict = {'red': ((0.00, 0, 0),
                      (0.35, 0, 0),
                      (0.66, 1, 1),
                      (0.89,1, 1),
                      (1, 0.5, 0.5)),
-         'green': ((0,0,0),
-                   (0.0099,0,0),
-                   (0.01, 1, 0),
+         'green': ((0.00, 0, 0),
                    (0.125,0, 0),
                    (0.375,1, 1),
                    (0.64,1, 1),
                    (0.91,0,0),
                    (1, 0, 0)),
-         'blue': ((0,0,0),
-                  (0.0099,0,0),
-                  (0.01,1,0.5),
+         'blue': ((0.00,0.5,0.5),
                   (0.11, 1, 1),
                   (0.34, 1, 1),
                   (0.65,0, 0),
                   (1, 0, 0))}
+        
+#        cdict = {'red': ((0,0,0),
+#                     (0.0099,0,0),
+#                     (0.01, 1, 0),
+#                     (0.35, 0, 0),
+#                     (0.66, 1, 1),
+#                     (0.89,1, 1),
+#                     (1, 0.5, 0.5)),
+#         'green': ((0,0,0),
+#                   (0.0099,0,0),
+#                   (0.01, 1, 0),
+#                   (0.125,0, 0),
+#                   (0.375,1, 1),
+#                   (0.64,1, 1),
+#                   (0.91,0,0),
+#                   (1, 0, 0)),
+#         'blue': ((0,0,0),
+#                  (0.0099,0,0),
+#                  (0.01,1,0.5),
+#                  (0.11, 1, 1),
+#                  (0.34, 1, 1),
+#                  (0.65,0, 0),
+#                  (1, 0, 0))}
     
-    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,20)
+    my_cmap = colors.LinearSegmentedColormap('my_colormap',cdict,50)
     my_cmap.set_over('w')
     my_cmap.set_under('k')
     
@@ -54,24 +71,18 @@ def backscatter_plot(fig, ax, ar, xdata, ydata, data, vrange, fsize = 21):
     
     #set colormap to be the same as 'jet' with the addition of white color for
     #depol ratios set to identiacally zero because they couldn't be calculated
-    cdict = {'red': ((0,0,0),
-                     (0.0099,0,0),
-                     (0.01, 1, 0),
+    cdict = {'red': ((0.00, 0, 0),
                      (0.35, 0, 0),
                      (0.66, 1, 1),
                      (0.89,1, 1),
                      (1, 0.5, 0.5)),
-         'green': ((0,0,0),
-                   (0.0099,0,0),
-                   (0.01, 1, 0),
+         'green': ((0.00, 0, 0),
                    (0.125,0, 0),
                    (0.375,1, 1),
                    (0.64,1, 1),
                    (0.91,0,0),
                    (1, 0, 0)),
-         'blue': ((0,0,0),
-                  (0.0099,0,0),
-                  (0.01,1,0.5),
+         'blue': ((0.00,0.5,0.5),
                   (0.11, 1, 1),
                   (0.34, 1, 1),
                   (0.65,0, 0),
@@ -242,6 +253,7 @@ def doubleplot(datafile,**kwargs):
     import pandas as pan
     import os
     import MPLtools as mtools
+    import MPLprocesstools as mproc
     import matplotlib.pyplot as plt
     import numpy as np
     
@@ -266,6 +278,8 @@ def doubleplot(datafile,**kwargs):
     savefilepath = location to save file
     showplot = boolean to determine whether to display plot
     verbose = boolean to determine whether to display messages
+    SNRmask = boolean to determine whether to apple SNR masking
+    SNRthresh = SNR threshold to apply (defaults to 1)
     
     """
     
@@ -289,7 +303,8 @@ def doubleplot(datafile,**kwargs):
     savefilepath = kwargs.get('savefilepath',os.path.join(os.getcwd(),'Figures'))
     showplot = kwargs.get('showplot',False)
     verbose = kwargs.get('verbose',False)
-        
+    SNRmask = kwargs.get('SNRmask',False)
+    SNRthresh = kwargs.get('SNRthresh',3) 
     
     NRB_min = NRB_limits[0]
     NRB_max = NRB_limits[1]
@@ -305,22 +320,27 @@ def doubleplot(datafile,**kwargs):
         MPLevent.fromHDF(datafile)    
     else:
         MPLevent = datafile
+
+    if not MPLevent.depolrat:
+        MPLevent.calculate_depolrat()
         
     if len(altrange)>0:
         MPLevent.alt_resample(altrange)    
     
     if [i for i in [starttime,endtime,timestep] if len(i)>0]:
         MPLevent.time_resample(timestep=timestep,starttime=starttime,endtime=endtime)
-           
-#    MPLevent.range_cor()    
-#    MPLevent.calculate_NRB(showplots = False)
-#    MPLevent.calculate_depolrat()
-       
+        
+      
     #Now generate a new figure.
+    
+    if SNRmask:
+        MPLevent=mproc.SNR_mask_depol(MPLevent)
     
     copol = MPLevent.NRB[0]
     depol = MPLevent.depolrat[0]
-    
+        
+    copol.fillna(-99999,inplace=True)
+    depol.fillna(-99999,inplace=True)
     alt = copol.columns
     datetime = copol.index    
     
@@ -338,7 +358,7 @@ def doubleplot(datafile,**kwargs):
         
     ax1 = fig.add_subplot(2,1,1)
     im1 = backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (NRB_min,NRB_max), fsize = fsize)
-    cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
+    cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6, extend='both')
     cbar1.set_ticks(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
     cbar1.set_ticklabels(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
     cbar1.ax.tick_params(labelsize = fsize)
@@ -350,7 +370,7 @@ def doubleplot(datafile,**kwargs):
             
     ax2 = fig.add_subplot(2,1,2)
     im2 = depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], (depol_min,depol_max), fsize = fsize)
-    cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6)
+    cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6, extend='both')
     cbar2.set_ticks(np.arange(depol_min,depol_max+depol_step,depol_step))
     cbar2.set_ticklabels(np.arange(depol_min,depol_max+depol_step,depol_step))
     cbar2.ax.tick_params(labelsize = fsize)
@@ -374,7 +394,7 @@ def doubleplot(datafile,**kwargs):
         os.chdir(olddir)
     if showplot:
         fig.canvas.draw()
-    del fig, cbar1, cbar2, MPLevent
+    del fig, cbar1,cbar2,MPLevent
     
     if verbose:
         print 'Done'
@@ -383,122 +403,54 @@ def doubleplot(datafile,**kwargs):
 if __name__=='__main__':
     import os
     import MPLtools as mtools
+    import MPLprocesstools as mproc
     import numpy as np
+    from datetime import datetime
        
-    altrange = np.arange(150,1680,30)
-    timestep = '60S'
-    hours = ['03','06', '09','12', '15','18','21']
+    altrange = np.arange(150,15030,30)
+    starttime = datetime(2014,5,1,0,0)
+    endtime = datetime(2014,5,31,23,0)
+    timestep = '120S'
+    hours = ['06','12','18']
     depol_limits=(0.0,0.5,0.1)
 
-    os.chdir('C:\SigmaMPL\DATA')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Purchase\BC CLEAR\Final Report Data')
 
-    filepath = mtools.get_files('Select Processed MPL file', filetype = ('.h5', '*.h5'))[0]
+    filepath = mtools.get_files('Select Processed MPL file(s)', filetype = ('.h5', '*.h5'))
     
-    [d_path,d_filename] = os.path.split(filepath)
-    
-    savefilename = '{0}-BL.png'.format(d_filename.split('.')[0])
+    if len(filepath)==1:
+        [d_path,d_filename] = os.path.split(filepath[0])    
+        savefilename = '{0}_lower.png'.format(d_filename.split('.')[0])
+    else:
+        [d_path,startfile] = os.path.split(filepath[0])
+        [d_path,endfile] = os.path.split(filepath[-1])
+        savefilename = '{0}-{1}_lower.png'.format(startfile.split('.')[0],endfile.split('.')[0])          
     savepath = os.path.join(os.path.split(d_path)[0],'Figures')
+
+    for f in filepath:  
+        MPLtemp = mtools.MPL()
+        MPLtemp.fromHDF(f)        
+        MPLtemp.alt_resample(altrange)
+        
+        try:
+            MPLevent.append(MPLtemp)
+        except NameError:
+            MPLevent = MPLtemp
+   
+    MPLevent.header.sort_index(inplace=True)
+    
+    for n in range(MPLevent.header['numchans'][0]):
+        MPLevent.data[n].sort_index(inplace=True)
+    
+    MPLevent.time_resample(timestep,starttime,endtime)  
+    MPLevent.calculate_SNR()
+    MPLevent=mproc.NRB_mask_all(MPLevent) 
     
     kwargs = {'saveplot':True,'showplot':True,'verbose':True,
                 'savefilepath':savepath,'savefilename':savefilename,
-                'altrange':altrange,'timestep':timestep,'hours':hours,'depol_limits':depol_limits}
+                'hours':hours,'depol_limits':depol_limits,'SNRmask':True}
     
-    doubleplot(filepath,**kwargs)
+    doubleplot(MPLevent,**kwargs)
     
+    del MPLevent
     
-#    if len(filepath) == 1:   
-#        [path,startfile] = os.path.split(filepath[0])
-#        d_filename = startfile.split('-')[0]
-#    else:
-#        [path,startfile] = os.path.split(filepath[0])
-#        [path,endfile] = os.path.split(filepath[-1])
-#        d_filename = startfile.split('-')[0]+'-'+endfile.split('-')[0]
-        
-    
-#    for f in filepath:  
-#        MPLtemp = mtools.MPL()
-#        MPLtemp.fromHDF(f)        
-##        MPLtemp.alt_resample(altrange)
-#        
-#        try:
-#            MPLevent.append(MPLtemp)
-#        except NameError:
-#            MPLevent = MPLtemp
-#   
-#    MPLevent.header.sort_index()
-#    
-#    for n in range(MPLevent.header['numchans'][0]):
-#        data = MPLevent.data[n]
-#        data = data.sort_index()
-#    
-##    MPLevent.time_resample(timestep)
-#    MPLevent.range_cor()    
-#    MPLevent.calculate_NRB(showplots = False)
-#    MPLevent.calculate_depolrat()
-#       
-#    #Now generate a new figure.
-#    
-#    copol = MPLevent.NRB[0]
-#    depol = MPLevent.depolrat[0]
-#    
-#    alt = copol.columns
-#    time_index = copol.index
-#    #depol = imtools.blur_image(depol,(7,7), kernel ='Flat')
-#    
-#    datetime = depol.index
-#    alt = depol.columns      
-#    
-#    #create figure and plot image of depolarization ratios
-#    #create figure and plot image of depolarization ratios
-#    fsize = 18 #baseline font size
-#    ar = 2.0  #aspect ratio
-#    figheight = 12 #inches
-#    
-#    plt.rc('font', family='serif', size=fsize)
-#    
-#    
-#    fig = plt.figure(0)
-#    
-#    h_set = range(1,25)
-#    h_set = map(str,h_set)
-#    
-#    NRB_min = 0
-#    NRB_max = 1.0
-#    NRB_step = 0.2
-#    
-#    print 'Generating Figure'
-#    os.chdir('../Figures')
-#    ax1 = fig.add_subplot(2,1,1)
-#    im1 = backscatter_plot(fig, ax1, ar, datetime,alt[::-1],copol.T[::-1], (NRB_min,NRB_max), fsize = fsize)
-#    cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6)
-#    cbar1.set_ticks(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
-#    cbar1.set_ticklabels(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
-#    cbar1.ax.tick_params(labelsize = fsize)
-#    cbar1.ax.set_ylabel('$[counts*km^{2}/(\mu s*\mu J)$')
-#    dateticks(ax1, datetime, hours = hours, fsize = fsize, tcolor = 'w')
-#    ax1.set_xticklabels([])
-#    t1 = ax1.set_title('Normalized Relative Backscatter', fontsize = fsize+10)
-#    t1.set_y(1.03)
-#            
-#    ax2 = fig.add_subplot(2,1,2)
-#    im2 = depol_plot(fig, ax2, ar, datetime,alt[::-1],depol.T[::-1], (0,0.5), fsize = fsize)
-#    cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6)
-#    cbar2.set_ticks(np.arange(0,0.6,0.1))
-#    cbar2.set_ticklabels(np.arange(0,0.6,0.1))
-#    cbar2.ax.tick_params(labelsize = fsize)
-#    #set axis ranges and tickmarks based on data ranges
-#    dateticks(ax2, datetime, hours = hours, fsize = fsize)
-#    ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
-#    fig.autofmt_xdate()
-#    t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)
-#    t2.set_y(1.03)    
-#    
-#    
-#    fig.set_size_inches(figheight*ar,figheight) 
-#    fig.canvas.print_figure(d_filename+'-NRB.png',dpi = 100, edgecolor = 'b', bbox_inches = 'tight')
-##    plt.savefig(d_filename+'NRB.png')
-#    print 'Done'
-#    
-#    fig.canvas.draw()
-#    del fig, MPLevent
-##    del MPLevent

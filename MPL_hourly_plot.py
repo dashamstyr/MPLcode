@@ -10,7 +10,7 @@ Program to generate processed image of files from most recent 24 hour window in 
 
 import os, sys
 import pandas as pan
-import datetime,time
+import datetime,time,pytz
 import numpy as np
 import glob
 
@@ -19,33 +19,35 @@ if sys.platform == 'win32':
     import matplotlib
     from matplotlib import pyplot as plt
     datalib = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\MPLData\Latest'
-    HTMLlib = 'C:\Users\dashamstyr\Dropbox\MPL website\WebData'
-    codelib = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\MPLCode'
+    sitelib = 'C:\Users\dashamstyr\Dropbox\MPL website\WebData'
+    codelib = 'C:\Users\dashamstyr\Dropbox\Python_Scripts\GIT_Repos\MPLcode'
     figurelib = 'C:\Users\dashamstyr\Dropbox\MPL website\WebData'
-    template = 'C:\Users\dashamstyr\Dropbox\MPL website\pcottle\HTML\index_temp.html'
+    systimezone = pytz.timezone('US/Pacific')
 else:
     import matplotlib
     matplotlib.use('Agg')
     from matplotlib import pyplot as plt
     codelib = '/data/lv1/pcottle/MPLCode/'
     datalib = '/data/lv1/pcottle/MPLData/Latest/'
-    HTMLlib = '/data/lv1/WebData/'
+    sitelib = '/data/lv1/WebData/'
     figurelib = '/data/lv1/WebData/'
-    template = '/data/lv1/pcottle/HTML/index_temp.html'
+    systimezone = pytz.utc
 
-homepage = os.path.join(HTMLlib,'index.html')
+homepage = os.path.join(sitelib,'index.html')
 latest_figname = os.path.join(figurelib,'latest.png')
+localzone = pytz.timezone('US/Pacific')
 
 try:
     sys.path.append(codelib)
     from MPLcode import MPLtools as mtools
-    from MPLcode import MPLplot as mplot   
+    from MPLcode import MPLplot as mplot 
+    from MPLcode import MPLprocesstools as mproc
 except ImportError:
     
     try:
         import MPLtools as mtools
         import MPLplot as mplot
-    
+        import MPLprocesstools as mproc
     except ImportError:
         raise Exception('You havent specified where your modules are located!')
 
@@ -89,8 +91,8 @@ if current_time-latestfig_time > datetime.timedelta(hours=1):
     if len(mpl_selected) > 0:
     #set altitude range and time step sizes
     
-        altrange = np.arange(150,15000,30)#meters
-        timestep = '60S' #seconds
+        altrange = np.arange(150,10060,60)#meters
+        timestep = '120S' #seconds
         
         
         for f in mpl_selected:
@@ -107,33 +109,37 @@ if current_time-latestfig_time > datetime.timedelta(hours=1):
         MPLdat_event.header.sort_index()
         
         for n in range(MPLdat_event.header['numchans'][0]):
-            data = MPLdat_event.data[n]
-            data = data.sort_index()
+            MPLdat_event.data[n].sort_index()
         
         MPLdat_event.time_resample(timestep,verbose=False)
-        MPLdat_event.range_cor()    
-        MPLdat_event.calculate_NRB(showplots = False)
-        MPLdat_event.calculate_depolrat()
+        MPLdat_event.calc_all()
+        
+        MPLdat_event=mproc.NRB_mask_all(MPLdat_event)
+            
+        
            
         #Now generate a new figure.       
         kwargs = {'saveplot':True,'showplot':False,'verbose':False,
-                    'savefilepath':figurelib,'savefilename':latest_figname}
+                    'savefilepath':figurelib,'savefilename':latest_figname,
+                    'SNRmask':True}
         
         mplot.doubleplot(MPLdat_event,**kwargs)
-
+        plt.close('all')
         
         #update html file
-        with open(template,'r') as htmltemp:
+        current_time=systimezone.localize(current_time)
+        conv_time=localzone.normalize(current_time.astimezone(localzone))
+        with open(homepage,'r') as htmltemp:
             data = htmltemp.readlines()
         for n in range(len(data)):
             if "<h2>Latest Image:" in data[n]:
-                year = str(current_time.year)
-                month = str(current_time.month).zfill(2)
-                day = str(current_time.day).zfill(2)
-                hour = str(current_time.hour).zfill(2)
-                minute = str(current_time.minute).zfill(2)
+                year = str(conv_time.year)
+                month = str(conv_time.month).zfill(2)
+                day = str(conv_time.day).zfill(2)
+                hour = str(conv_time.hour).zfill(2)
+                minute = str(conv_time.minute).zfill(2)
                 
-                data[n] = '<h2>Latest Image: {0}-{1}-{2} at {3}:{4}</h2>'.format(year,month,day,hour,minute)                
+                data[n] = '<h2>Latest Image: {0}-{1}-{2} at {3}:{4} Local Time</h2>\r\n'.format(year,month,day,hour,minute)                
         with open(homepage,'w') as htmlhome:
             htmlhome.writelines(data)
             

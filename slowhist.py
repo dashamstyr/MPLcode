@@ -12,7 +12,7 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
     from math import isnan
     """
        given a list or numpy array dataVecPy, bin values in
-       numbins between mindata and maxsdata, returning a
+       numbins between mindata and maxdata, returning a
        python dictionary with edges, centers, counts and
        "fullbins", which is a vector of the same length as
        dataVecPy with the bin of every datapoint
