@@ -1205,7 +1205,8 @@ class MPL:
                 elif verbose:
                     print "No depolrat available for SNR calc"
         
-        for dset_name,dset in datasets:            
+        for dset_name,dset in datasets: 
+            SNRdict[dset_name] = []
             for n in range(len(dset)): 
                 tempdat=dset[n]
                 if not bg_alt:
@@ -1225,7 +1226,7 @@ class MPL:
                     
                     SNRprof=np.array([SNR(v) for v in tempprof.values]).clip(0)
                     SNRtemp.ix[i]=SNRprof
-                SNRdict[dset_name][n]=SNRtemp
+                SNRdict[dset_name].append(SNRtemp)
                 
         self.SNR=SNRdict
 

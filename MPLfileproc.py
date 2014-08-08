@@ -26,13 +26,16 @@ def fileproc(newdir, **kwargs):
     import numpy as np
     import os,glob
     import MPLtools as mtools
+    import MPLprocesstools as mproc
     
     altrange = kwargs.get('altrange',np.arange(150,15000,30))        
     timestep = kwargs.get('timestep','60S')
     interactive = kwargs.get('interactive',True)
     doplot = kwargs.get('doplot',False)
     saveplot = kwargs.get('saveplot',False)
-    showplot = kwargs.get('showplot',True)
+    showplot = kwargs.get('showplot',False)
+    NRBmask = kwargs.get('NRBmask',False)
+    SNRmask = kwargs.get('SNRmask',False)
     verbose = kwargs.get('verbose',False)
     
     #starttime and endtime are defined later   
@@ -81,9 +84,13 @@ def fileproc(newdir, **kwargs):
         data = data.sort_index()
     
     MPLdat_event.time_resample(timestep,verbose=verbose)
-    MPLdat_event.range_cor()    
-    MPLdat_event.calculate_NRB(showplots = False)
-    MPLdat_event.calculate_depolrat()
+    MPLdat_event.calc_all()
+    
+    if NRBmask:
+        MPLdat_event=mproc.NRB_mask_all(MPLdat_event)
+    
+    if SNRmask:
+        MPLdat_event=mproc.SNR_mask_depol(MPLdat_event)
     
     if os.path.isdir('Processed'):
         os.chdir('Processed')
@@ -220,9 +227,9 @@ def clearall():
 if __name__ == '__main__':
     import MPLtools as mtools
     
-    altrange=range(150,8130,30)
+    altrange=range(150,15030,30)
     timestep='60S'
-    
+    os.chdir('C:\\Users\\dashamstyr\\Dropbox\\Lidar Files\\UBC Cross-Cal\\20131014-20131016\\10-15')
     procdir = mtools.set_dir('Select folder to process files from')
     fileproc(procdir,doplot=True,saveplot=True,showplot=False,verbose=True,altrange=altrange,timestep=timestep)
     

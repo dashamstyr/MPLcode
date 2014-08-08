@@ -143,7 +143,8 @@ def dateticks(ax, axisdat,hours = [], fsize = 21, tcolor = 'k'):
         dold = dtemp
         n += 1
     
-    plt.xticks(tickmarks,ticklabels,fontsize = fsize)
+    ax.set_xticks(tickmarks)
+    ax.set_xticklabels(ticklabels, fontsize = fsize)
 
     for line in ax.xaxis.get_ticklines():
         line.set_color(tcolor)
@@ -158,7 +159,8 @@ def altticks(ax, axisdat, numticks = 5, fsize = 21, tcolor = 'k'):
     tickmarks = range(0,numpoints,step)
     ticklabels = [str(int(t)) for t in axisdat[::step]]
 
-    plt.yticks(tickmarks,ticklabels, fontsize = fsize)
+    ax.set_yticks(tickmarks)
+    ax.set_yticklabels(ticklabels, fontsize = fsize)
 
     for line in ax.yaxis.get_ticklines():
         line.set_color(tcolor)

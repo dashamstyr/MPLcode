@@ -183,6 +183,7 @@ def clearall():
         
 if __name__ == '__main__':
     import MPLtools as mtools
+    import numpy as np
     
     procdir = mtools.set_dir('Select folder to process files from')
     fileproc(procdir, altrange = np.arange(150,10030,30),timestep = '60S')
