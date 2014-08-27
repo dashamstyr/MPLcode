@@ -146,7 +146,13 @@ def calc_SNR_depolrat(depolrat,**kwargs):
     SNR_out=depolrat/depolratsigma
     
     return SNR_out
+
+def partdepolratcalc(depolin):
     
+    moldepolrat=0.014 #check source on this
+    partdepolrat=(2*depolin*moldepolrat-moldepolrat**2)/(moldepolrat+1-depolin)
+    
+    return partdepolrat
 
 def buffered_array(data,(x,y)):
 
@@ -478,7 +484,65 @@ def molecular_detect(MPLin,**kwargs):
         
     return panelout
    
+def molecular_detect_single(tempprof,dataprof,**kwargs):    
+    
+    wave=kwargs.get('wave',532.0)
+    winsize=kwargs.get('winsize',30) 
+    varthresh=kwargs.get('varthresh',1)
+    savefile=kwargs.get('savefile',False)
+    savefilename=kwargs.get('savefilename','testmolecular.h5')
+    
+    
+    bg_alt=tempprof.index.values[-100]
+    #Step 1: calculate molecular profile
+    z=tempprof.index.values
+    altstep=z[1]-z[0]  #assumes regular altitude steps throughout
+    Pmol=ltools.molprof(z,wave)
+    Pmol_cor=Pmol.ix['vals']
+    
+    #Step 3: divide the two and average together until noise is tamped down
+    temprat=Pmol_cor/tempprof
+    bufferedprof=buffered_array(temprat.values,(1,winsize))
+    coef=pan.Series(index=temprat.index)
+    for n in range(len(temprat.values)):
+        tempratvals=bufferedprof[n:n+winsize]
+        coef.iloc[n]=np.mean(tempratvals)
+    #Step 4: Result from 3 is profile of multiplying facto.Use this to calculate variance of residuals
+    rawvariance=((1/(z/1000.0)**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
+    bufferedvariance=buffered_array(rawvariance.values,(1,winsize))
+    variance=pan.Series(index=rawvariance.index)
+    for n in range(len(rawvariance.values)):
+        tempvarvals=bufferedvariance[n:n+winsize]
+        variance.iloc[n]=np.mean(tempvarvals)
 
+    sigmaprof=calc_sigma(dataprof,bg_alt=bg_alt)
+    #Step 5: Regions where variance is below threshold multiple of noise varaince(sigma squared)
+    #identified as molecular regions
+    tempmask=pan.Series(z,index=[v<=varthresh*s**2 for v,s in zip(variance,sigmaprof)])
+    tempgroups=tempmask.groupby(level=0)
+    dfout=pan.DataFrame(columns=['Base','Top'])
+    baseponts=[]
+    toppoints=[]
+    for g in tempgroups:
+        if g[0]:
+            tempalts=g[1]
+            n=0
+            for key,alt in groupby(enumerate(tempalts), lambda (i,x):i-(x-tempalts.iloc[0])/altstep):                    
+                layeralt=map(operator.itemgetter(1),alt)
+                panelname='Layer{0}'.format(n)
+                dfout.loc[panelname]=[layeralt[0],layeralt[-1]]
+                basepoints.append((layeralt[0],tempprof.ix[layeralt[0]]))
+                toppoints.append((layeralt[1],tempprof.ix[layeralt[1]]))
+                n+=1
+    
+    
+    fig=plt.figure()
+    ax1=fig.add_subplot(2,1,1)
+    ax1.plot(tempprof.index,tempprof.values)
+    ax2=fig.add_subplot(2,1,2)
+    ax2.plot(tempprof.index,varthresh*sigmaprof**2,tempprof.index,variance.values)
+    ax2.set_ylim([0,max(varthresh*sigmaprof**2)*1.2])
+    fig.canvas.draw()
 
 def PBL_detect(MPLin,**kwargs):
     
@@ -849,7 +913,7 @@ def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
            
     return layers
 
-def layerprofplot(profin,layersin,numlayer=5):
+def layerprofplot(profin,layersin,numlayer=30):
     
     z=profin.index
     vals=profin.values
@@ -858,8 +922,8 @@ def layerprofplot(profin,layersin,numlayer=5):
     ax.plot(vals,z)
     
     mcolors=['blue','red','green','yellow','orange','purple']
-    if numlayer>len(layersin.loc['Base']):
-        numlayer=len(layersin.loc['Base'])
+    if numlayer>len(layersin.ix['Base']):
+        numlayer=len(layersin.ix['Base'])
         
     for n in range(numlayer):
         if n>(len(mcolors)-1):
@@ -867,7 +931,7 @@ def layerprofplot(profin,layersin,numlayer=5):
         else:
             color=mcolors[n]   
         templayer=layersin.iloc[:,n]
-        if not np.isnan(templayer).any():
+        if not np.isnan(templayer['Base']):
             ax.scatter(profin.ix[templayer.iloc[0]],templayer.iloc[0],c=color,marker='o')
             ax.scatter(profin.ix[templayer.iloc[1]],templayer.iloc[1],c=color,marker='x')
             ax.scatter(profin.ix[templayer.iloc[2]],templayer.iloc[2],c=color,marker='v')
@@ -1056,8 +1120,16 @@ if __name__=='__main__':
     
     mplmasked=SNR_mask_all(mpltest,SNRthreshold=SNRthreshold)
     
-    molecular=molecular_detect(mpltest,varthresh=2, winsize=5) 
-    layers=find_layers(mpltest,noisethresh=0.4,cloudthresh=(1.0,0.20),datatype='NRB',layerwidth=2,widths=np.arange(2,5))
+    
+#    maxalt=9000    
+#    NRBprof=mpltest.NRB[0].ix['2014-05-03T00:00:00.000000000-0700']
+#    NRBprof=NRBprof[NRBprof.index<maxalt]
+#    dataprof=mpltest.data[0].ix['2014-05-03T00:00:00.000000000-0700']
+#    dataprof=dataprof[dataprof.index<maxalt]
+#    molecular_detect_single(NRBprof,dataprof)
+    
+    molecular=molecular_detect(mpltest,varthresh=1, winsize=5) 
+    layers=find_layers(mpltest,noisethresh=0.4,cloudthresh=(1.0,0.20),datatype='NRB',layerwidth=4,widths=np.arange(2,5))
     
 #    with pan.get_store('testmolecular.h5') as molstore:
 #        molecular=molstore['molecular']
@@ -1086,45 +1158,13 @@ if __name__=='__main__':
     maxalt=altrange[-1]
     colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
     
-    mpltest.alt_resample(altrange)
-    mpltest.calc_all() 
-    kwargs = {'saveplot':False,'showplot':True,'verbose':True,'altrange':altrange}    
-    mplot.doubleplot(mplmasked,**kwargs)
+#    mpltest.alt_resample(altrange)
+#    mpltest.calc_all() 
+#    kwargs = {'saveplot':False,'showplot':True,'verbose':True,'altrange':altrange}    
+#    mplot.doubleplot(mplmasked,**kwargs)
 
-#    profnum=100
-#    
-#    copolprof=mpltest.NRB[0].iloc[profnum,:]
-#    depolprof=mpltest.NRB[1].iloc[profnum,:]
-#    depolratprof=mpltest.depolrat[0].iloc[profnum,:]
-#    
-#    copolsigma=calc_sigma(copolprof)
-#    copolSNR=calc_SNR(copolprof)
-#    
-#    depolratsigma=calc_sigma_depolrat(copolprof,depolprof)
-#    depolratSNR=calc_SNR_depolrat(depolratprof,depolratsigma=depolratsigma)
-#    widths=np.arange(2,20)
-#    layerwidth=4
-#    temp_cwt=signal.cwt(depolratprof,signal.ricker,widths)
-#    tempmax=maxmin(temp_cwt,widths,np.greater)
-#    tempmin=maxmin(temp_cwt,widths,np.less)
-#    tempsigma0=.1
-#    noisethresh=1
-#    z=depolratprof.index
-#    
-#    minloc=[minval[1] for minval in tempmin if minval[0]==layerwidth]
-#    maxloc=[maxval[1] for maxval in tempmax if maxval[0]==layerwidth]
-#    templayers=layer_filter(depolratprof,maxloc,minloc,tempsigma0,noisethresh)
-#    panelout=pan.DataFrame(index=range(len(templayers)),columns=['Base','Peak','Top','Delta'])
-#
-#    for n in range(len(templayers)):
-#        indices=templayers[n]
-#        minalt=z[indices[0]]
-#        peakalt=z[indices[1]]
-#        maxalt=z[indices[2]]
-#        delta=indices[3]
-#        panelname='Layer{0}'.format(n)
-#        panelout.iloc[n,0]=minalt
-#        panelout.iloc[n,1]=peakalt
-#        panelout.iloc[n,2]=maxalt
-#        panelout.iloc[n,3]=delta
+    proftime='2014-05-02T23:30:00.000000000-0700'
     
+    prof=mpltest.NRB[0].ix[proftime]
+    layersin=layers.ix[:,proftime,:]
+    layerprofplot(prof,layersin,numlayer=30)

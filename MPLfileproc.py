@@ -37,6 +37,8 @@ def fileproc(newdir, **kwargs):
     NRBmask = kwargs.get('NRBmask',False)
     SNRmask = kwargs.get('SNRmask',False)
     verbose = kwargs.get('verbose',False)
+    NRB_limits = kwargs.get('NRB_limits',(0.0,1.0,0.2))  
+    depol_limits = kwargs.get('depol_limits',(0.0,0.5,0.1))
     
     #starttime and endtime are defined later   
     
@@ -108,7 +110,9 @@ def fileproc(newdir, **kwargs):
         import MPLplot as mplot 
         savefilename = '{0}.png'.format(d_filename.split('.')[0])
         savepath = os.path.join(newdir,'Figures')
-        mplot.doubleplot(MPLdat_event,saveplot=saveplot,showplot=showplot,verbose=verbose,savefilepath=savepath,savefilename=savefilename)
+        mplot.doubleplot(MPLdat_event,saveplot=saveplot,showplot=showplot,
+                         verbose=verbose,savefilepath=savepath,savefilename=savefilename,
+                         NRB_limits=NRB_limits,depol_limits=depol_limits)
     
     os.chdir(olddir)
     
@@ -227,11 +231,12 @@ def clearall():
 if __name__ == '__main__':
     import MPLtools as mtools
     
-    altrange=range(150,15030,30)
-    timestep='60S'
-    os.chdir('C:\\Users\\dashamstyr\\Dropbox\\Lidar Files\\UBC Cross-Cal\\20131014-20131016\\10-15')
+    altrange=range(150,3180,30)
+    timestep='30S'
+    os.chdir('C:\\Users\\dashamstyr\\Dropbox')
     procdir = mtools.set_dir('Select folder to process files from')
-    fileproc(procdir,doplot=True,saveplot=True,showplot=False,verbose=True,altrange=altrange,timestep=timestep)
+    fileproc(procdir,doplot=True,saveplot=True,showplot=False,verbose=True,
+             altrange=altrange,timestep=timestep,NRB_limits=(0.0,0.5,0.1))
     
 #    plotfile = mtools.get_files('Select File to Plot', filetype = ('.h5', '*.h5'))
 #    quickplot(plotfile)
