@@ -580,7 +580,7 @@ def PBL_detect(MPLin,**kwargs):
     mol_min=kwargs.get('mol_min',[])
 
     MPLin=MPLin.calc_all()
-    #use raw data from co-polarized channel (NRB) to find boundary layer
+    #typically use raw data from co-polarized channel (NRB) to find boundary layer
     if datatype=='data':
         rawdata=MPLin.data[0]
     elif datatype=='rsq':
@@ -662,13 +662,26 @@ def find_layers(MPLin,**kwargs):
     bottom, peak,and top for each layer within the 2-D dataset
     
     inputs:
-    MPLin = an MPL-class object to be proken inot layers
+    MPLin = an MPL-class object to be proken into layers
     
     kwargs:
+    wavelet=type of wavelet to use to find layer edges.  default:signal.ricker
+    widths=Range of wavelet widths to feed into CWT.  default:[2]
+    layerwidth=wavelet width to use for final layer ID. default:2
+    bg_alt=altitude to mark as particulate-free for background calc. defualt:[]
+    noisethresh=threshold level to mark a layer above background noise. default:3
+    cloudthresh=threshold signal level to mark a layer as cloud for (water,ice). default: (1.0,0.4)
+    datatype=type of profile in MPL object to use for layers.  default:'data'
+    savefile=boolean for whetehr to save results. default:False
+    savefilename=name to save file under.  default:'testlayers.h5'
+    
     
     Outputs:
-    layers = a three-column dataframe with date-time index, containing altitude values
-    for bottom, peak,and top of layers
+    panelout = a pandas panel object with three axes:
+        major-axis: datetime of individual profiles
+        minor-axis: layer info ['Base','Peak','Top','Delta','Depol','Type',
+                                'Sub-Type','Lidar_Ratio']
+        columns: Layer number (e.g. 'Layer1')
     """
     
     #if MPLin does not have all necessary processed data,generate it
@@ -760,14 +773,20 @@ def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,sigma0=[]):
     edge to peak is less than some multiple of the shot noise from background and
     dark current
     
+    once a layer is defined, it is then investigated for variations in depol ratio
+    If significant variations exist, the layer is firther divided into sub-layers 
+    based on these results
+    
     inputs:
     prof - a pandas series represeting a single profile of lidar returns with altitude
-    maxix - a list of maximum index values from the CWT results at a given wavelet width
+    depolprof - a pandas series representing a profile of depol ratios with altitude
+    maxiloc - a list of maximum index values from the CWT results at a given wavelet width
             represent the peaks of a given layer
-    minix - a list of minimum index values from the CWT results at a given wavelet width
-            represnt the edges of a given layer
-    sigma0 - baeline noise level for the profile, if empty it is calculated
-    thresh - difference between peak and edge of a layer must exvceeed this multiple of sigma0 to be counted
+    miniloc - a list of minimum index values from the CWT results at a given wavelet width
+            represent the edges of a given layer
+    sigma0 - baseline noise level for the profile, if empty it is calculated
+    thresh - difference between peak and edge of a layer must exceeed this 
+             multiple of sigma0 to be counted.  default: 3
     
     """
     #step 1:calculate noise floor, if not defined
@@ -780,7 +799,7 @@ def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,sigma0=[]):
     nextminloc=0
     while n < len(maxiloc)-1:
         n+=1
-        #note: due to buffering to obtain averages, first and lat peaks are discarded
+        #note: due to buffering to obtain averages, first and last peaks are discarded
         peakloc=maxiloc[n]
         edge_below_list=[v for v in miniloc[nextminloc:] if v<peakloc]
         edge_above_list=[v for v in miniloc[nextminloc:] if v>peakloc]
@@ -1104,67 +1123,142 @@ def colormask_plot(maskin,colordict,**kwargs):
 
     fig.canvas.draw()
     
-if __name__=='__main__':
+def findalllayers(filename,**kwargs):    
+    timestep=kwargs.get('timestep','240S')
+    maxalt=kwargs.get('maxalt',[])
+    NRBmask=kwargs.get('NRBmask',True)
+    NRBthresh=kwargs.get('NRBthresh',3)
+    molthresh=kwargs.get('molthresh',1)
+    molwinsize=kwargs.get('molwinsize',5)
+    layernoisethresh=kwargs.get('layernoisethresh',0.4)
+    cloudthresh=kwargs.get('cloudthresh',(1.0,0.20))
+    layerdtype=kwargs.get('layerdtype','NRB')
+    layerwidth=kwargs.get('layerwidth',4)
+    layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
+    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    savemasks=kwargs.get('savemasks',True)
+    savemaskname=kwargs.get('savemaskname','testmasksall.h5')
     
-
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\Ucluelet Files\Processed')
-#    os.chdir('C:\\Users\\dashamstyr\\Dropbox\\Lidar Files\\UBC Cross-Cal\\20131014-20131016\\10-15\\Processed')
     mpltest = mtools.MPL()
-    
-    mpltest.fromHDF('201405030000-201405030900_proc.h5')
-    
-    timestep='120S'
-    SNRthreshold=3
+    mpltest.fromHDF(filename)
     mpltest.time_resample(timestep=timestep)
-    mpltest.calc_all()
+    mpltest.calc_all()     
+    if NRBmask:
+        mpltest=NRB_mask_all(mpltest,NRBthreshold=NRBthresh)   
     
-    mplmasked=SNR_mask_all(mpltest,SNRthreshold=SNRthreshold)
-    
-    
-#    maxalt=9000    
-#    NRBprof=mpltest.NRB[0].ix['2014-05-03T00:00:00.000000000-0700']
-#    NRBprof=NRBprof[NRBprof.index<maxalt]
-#    dataprof=mpltest.data[0].ix['2014-05-03T00:00:00.000000000-0700']
-#    dataprof=dataprof[dataprof.index<maxalt]
-#    molecular_detect_single(NRBprof,dataprof)
-    
-    molecular=molecular_detect(mpltest,varthresh=1, winsize=5) 
-    layers=find_layers(mpltest,noisethresh=0.4,cloudthresh=(1.0,0.20),datatype='NRB',layerwidth=4,widths=np.arange(2,5))
-    
-#    with pan.get_store('testmolecular.h5') as molstore:
-#        molecular=molstore['molecular']
-#    
-#    with pan.get_store('testlayers.h5') as laystore:
-#        layers=laystore['layers'] 
-        
+    molecular=molecular_detect(mpltest,varthresh=molthresh, winsize=molwinsize) 
+    layers=find_layers(mpltest,noisethresh=layernoisethresh,cloudthresh=cloudthresh,
+                       datatype=layerdtype,layerwidth=layerwidth,widths=layerCWTrange)        
     mol_min=molecular.loc['Layer0']
-    layer_min=layers.loc['Layer0']
+    try:
+        layer_min=layers.loc['Layer0']
+    except KeyError:
+        layer_min=mpltest.NRB[0].columns[-1]
+    pbl=PBL_detect(mpltest,mol_min=mol_min,layer_min=layer_min,widths=PBLCWTrange)
     
-#    profile=mpltest.NRB[0].iloc[20,:]
-#    l=layers.iloc[:,20,:]
-#    
-#    layerprofplot(profile,l,numlayer=10)
-    pbl=PBL_detect(mpltest,mol_min=mol_min,layer_min=layer_min,widths=np.arange(2,10))
+    if savemasks:    
+        store=pan.HDFStore(savemaskname)
+        store['molecular']=molecular
+        store['layers']=layers
+        store['PBL']=pbl
+        store.close()
     
+    dictout={'mpl':mpltest,'molecular':molecular,'layers':layers,'pbl':pbl}
+    return dictout   
     
-    SNRmask = mpltest.SNR['data'][0]>=SNRthreshold
+def layermaskplot(mpl,**kwargs):
+    fromHDF=kwargs.get('fromHDF',False)
+    if fromHDF:
+        HDFfile=kwargs.get('HDFfile',[])
+        molecular=pan.read_hdf(HDFfile,'molecular')
+        layers=pan.read_hdf(HDFfile,'layers')
+        PBL=pan.read_hdf(HDFfile,'PBL')
+    else:
+        molecular=kwargs.get('molecular',[])
+        layers=kwargs.get('layers',[])
+        PBL=kwargs.get('PBL',[])
+        
+    SNRmasktype=kwargs.get('SNRmasktype','data')
+    SNRthresh=kwargs.get('SNRthresh',1)
+    hours=kwargs.get('hours',['03','06','09','12','15','18','21'])
+    altrange=kwargs.get('altrange',np.arange(0,15030,30))
+    
+    SNRmask = mpl.SNR[SNRmasktype][0]>=SNRthresh
     SNRmask.replace(False,np.nan,inplace=True)
     
-    mask,colordict=colormask(mpltest,pbl,molecular,layers)
-    
-    hours=['03','06','09','12','15','18','21']
-    altrange=altrange = np.arange(0,15030,30)
+    mask,colordict=colormask(mpl,PBL,molecular,layers)
     minalt=altrange[0]
     maxalt=altrange[-1]
     colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
-    
-#    mpltest.alt_resample(altrange)
-#    mpltest.calc_all() 
-#    kwargs = {'saveplot':False,'showplot':True,'verbose':True,'altrange':altrange}    
-#    mplot.doubleplot(mplmasked,**kwargs)
 
-    proftime='2014-05-02T23:30:00.000000000-0700'
+if __name__=='__main__':
     
-    prof=mpltest.NRB[0].ix[proftime]
-    layersin=layers.ix[:,proftime,:]
-    layerprofplot(prof,layersin,numlayer=30)
+
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed')
+    filename='201405030000-201405030900_proc.h5'
+    
+    timestep='120S'
+    SNRthreshold=3
+#    layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
+    mpl=mtools.MPL()
+    mpl.fromHDF(filename)
+    mpl.time_resample(timestep=timestep)
+    mpl.calc_all()
+    #layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],PBL=layerdict['pbl'])
+    layermaskplot(mpl,fromHDF=True,HDFfile='testmasksall.h5')
+    
+#    mpltest=mtools.MPL()
+#    mpltest.fromHDF(filename)
+#    mpltest.time_resample(timestep=timestep)
+#    mpltest.calc_all()
+#    
+#    mplmasked=SNR_mask_all(mpltest,SNRthreshold=SNRthreshold)
+#    
+#    
+##    maxalt=9000    
+##    NRBprof=mpltest.NRB[0].ix['2014-05-03T00:00:00.000000000-0700']
+##    NRBprof=NRBprof[NRBprof.index<maxalt]
+##    dataprof=mpltest.data[0].ix['2014-05-03T00:00:00.000000000-0700']
+##    dataprof=dataprof[dataprof.index<maxalt]
+##    molecular_detect_single(NRBprof,dataprof)
+#    
+#    molecular=molecular_detect(mpltest,varthresh=1, winsize=5) 
+#    layers=find_layers(mpltest,noisethresh=0.4,cloudthresh=(1.0,0.20),datatype='NRB',layerwidth=4,widths=np.arange(2,5))
+#    
+##    with pan.get_store('testmolecular.h5') as molstore:
+##        molecular=molstore['molecular']
+##    
+##    with pan.get_store('testlayers.h5') as laystore:
+##        layers=laystore['layers'] 
+#        
+#    mol_min=molecular.loc['Layer0']
+#    layer_min=layers.loc['Layer0']
+#    
+##    profile=mpltest.NRB[0].iloc[20,:]
+##    l=layers.iloc[:,20,:]
+##    
+##    layerprofplot(profile,l,numlayer=10)
+#    pbl=PBL_detect(mpltest,mol_min=mol_min,layer_min=layer_min,widths=np.arange(2,10))
+#    
+#    
+#    SNRmask = mpltest.SNR['data'][0]>=SNRthreshold
+#    SNRmask.replace(False,np.nan,inplace=True)
+#    
+#    mask,colordict=colormask(mpltest,pbl,molecular,layers)
+#    
+#    hours=['03','06','09','12','15','18','21']
+#    altrange=altrange = np.arange(0,15030,30)
+#    minalt=altrange[0]
+#    maxalt=altrange[-1]
+#    colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
+#    
+##    mpltest.alt_resample(altrange)
+##    mpltest.calc_all() 
+##    kwargs = {'saveplot':False,'showplot':True,'verbose':True,'altrange':altrange}    
+##    mplot.doubleplot(mplmasked,**kwargs)
+#
+#    proftime='2014-05-02T23:30:00.000000000-0700'
+#    
+#    prof=mpltest.NRB[0].ix[proftime]
+#    layersin=layers.ix[:,proftime,:]
+#    layerprofplot(prof,layersin,numlayer=30)

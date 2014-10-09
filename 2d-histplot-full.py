@@ -9,16 +9,15 @@ import MPLtools as mtools
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as plib
 import slowhist as h2d
-from matplotlib import cm
+from matplotlib import cm,ticker
 
 def main():
     olddir = os.getcwd()
     
     #os.chdir('C:\SigmaMPL\DATA')
     
-    os.chdir('C:\SigmaMPL\DATA\Processed')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA')
     
     filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
     
@@ -26,7 +25,7 @@ def main():
     
     MPLfile.fromHDF(filepath[0])
     
-    altrange = np.arange(150,8000,30)
+    altrange = np.arange(150,10000,30)
     
     MPLfile.alt_resample(altrange)
     
@@ -41,9 +40,9 @@ def main():
     
     numbins = 100
     depolmin = 0.0
-    depolmax = 0.5
+    depolmax = 1.0
     copolmin = 0.0
-    copolmax = 3e-2
+    copolmax = 5.0
     
     copolhist=h2d.fullhist(copolvals,numbins,copolmin,copolmax,-9999.,-8888.)
     depolhist=h2d.fullhist(np.hstack(depolvals),numbins,depolmin,depolmax,-9999.,-8888.)
@@ -114,7 +113,7 @@ def main():
     colorbar="log10(counts)"
     the_label=cb.ax.set_ylabel(colorbar,rotation=270)
     altticks(axis,altrange,numticks = 6, fsize = fsize, tcolor='w')
-    axis.xaxis.set_major_locator(MaxNLocator(nbins = 5,prune='lower'))
+    axis.xaxis.set_major_locator(plt.tiMaxNLocator(nbins = 5,prune='lower'))
     for line in axis.xaxis.get_ticklines():
         line.set_color('w')
         line.set_markersize(10)

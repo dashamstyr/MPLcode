@@ -21,13 +21,13 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
 #    dataPtr=<double*>dataVec.data
     binsize=float(maxdata-mindata)/numbins
     numPts=dataVec.shape[0]
-    outcounts = np.zeros([numbins,],dtype=np.int64)
+    outcounts = np.zeros([numbins],dtype=np.int64)
 #    countPtr=<Py_ssize_t*> outcounts.data
-    bincenters=np.zeros([numbins,],dtype=np.float32)
+    bincenters=np.zeros([numbins],dtype=np.float32)
 #    centerPtr=<float*> bincenters.data
-    binedges=np.zeros([numbins+1,],dtype=np.float32)
+    binedges=np.zeros([numbins+1],dtype=np.float32)
 #    edgePtr=<float*> binedges.data
-    savebins=np.zeros([numPts,],dtype=np.int64)
+    savebins=np.zeros([numPts],dtype=np.int64)
 #    savebinsPtr=<Py_ssize_t*> savebins.data
     lowcount=0
     highcount=0
@@ -38,7 +38,7 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
             savebins[i]=missingLowValue
             continue
         else:
-            fbin =  int((dataVec[i] - mindata) / binsize)
+            fbin = int((dataVec[i] - mindata) / binsize)
         if fbin < 0:
             lowcount+=1
             savebins[i]=missingLowValue
@@ -70,11 +70,11 @@ def fullhist(dataVecPy, numbins, mindata, maxdata, missingLowValue, missingHighV
 
 def hist2D(xBinPy,yBinPy,numXbins,numYbins):
     """
-      xBinArray is a vector of bin indices, each pixel gets a bin number
-      yBinArray is a vector of bin indices, each pixel gets a bin number
+      xBinPy is a vector of bin indices, each pixel gets a bin number
+      yBinPy is a vector of bin indices, each pixel gets a bin number
       numXbins is the total number of bin indices for x
       numYbins is the total number of bin indices for y
-      converageMap is a 2-d histogram with the number of points
+      coverageMap is a 2-d histogram with the number of points
       in each 2d bin
     """
     xBinArray=np.ascontiguousarray(xBinPy,dtype=np.int64)
@@ -90,7 +90,7 @@ def hist2D(xBinPy,yBinPy,numXbins,numYbins):
     x=0
     y=0
     index=0
-    #drop the indexes into a nensted list
+    #drop the indexes into a nested list
     for i in range(numXDataPoints):
       if (xBinArray[i] > -1) & (yBinArray[i] > -1):
         x = xBinArray[i]

@@ -1,3 +1,13 @@
+import numpy as np
+import os,glob
+import MPLtools as mtools
+import MPLprocesstools as mproc
+import datetime
+import matplotlib.pyplot as plt
+import MPLplot as mplot
+import pandas as pan
+
+
 def fileproc(newdir, **kwargs):
 
     """
@@ -22,11 +32,6 @@ def fileproc(newdir, **kwargs):
          
     
     """
-    
-    import numpy as np
-    import os,glob
-    import MPLtools as mtools
-    import MPLprocesstools as mproc
     
     altrange = kwargs.get('altrange',np.arange(150,15000,30))        
     timestep = kwargs.get('timestep','60S')
@@ -119,13 +124,6 @@ def fileproc(newdir, **kwargs):
 
 def quickplot(filename, datadir = [], savefigs = False):
     
-    import MPLtools as mtools
-    import matplotlib.pyplot as plt
-    import MPL_plot as mplot
-    import os
-    import numpy as np
-    import pandas as pan
-    
 #    MPLdat = mtools.MPL()
 #    
 #    MPLdat.fromHDF(filename[0])
@@ -203,8 +201,7 @@ def quickplot(filename, datadir = [], savefigs = False):
     print 'Done'
     
 def MPLtodatetime(filename):
-    import datetime
-   
+       
     year  = int(filename[0:4])
     month = int(filename[4:6])
     day   = int(filename[6:8])
@@ -212,6 +209,19 @@ def MPLtodatetime(filename):
     
     dt_out = datetime.datetime(year,month,day,hour)
     return dt_out
+
+def H5todatetime(filename):
+    datetxt=filename.split('_proc.h5')
+    [starttxt,endtxt]=datetxt[0].split('-')
+    
+    dt_start=MPLtodatetime(starttxt)
+    if endtxt:
+        dt_end=MPLtodatetime(endtxt)
+    else:
+        dt_end=[]
+    
+    return [dt_start,dt_end]
+    
 
 def datetimetoMPL(dt_in):
     
@@ -221,6 +231,28 @@ def datetimetoMPL(dt_in):
     hour  = str(dt_in.hour).zfill(2)
     
     filename = '{0}{1}{2}{3}00.mpl'.format(year,month,day,hour)
+    return filename
+
+def datetimetoH5(dt_range):
+    
+    [dt_start,dt_end]=dt_range
+    
+    startyear  = str(dt_start.year)
+    startmonth = str(dt_start.month).zfill(2)
+    startday   = str(dt_start.day).zfill(2)
+    starthour  = str(dt_start.hour).zfill(2)
+    starttxt = '{0}{1}{2}{3}00'.format(startyear,startmonth,startday,starthour)
+    
+    if dt_end:
+        endyear  = str(dt_end.year)
+        endmonth = str(dt_end.month).zfill(2)
+        endday   = str(dt_end.day).zfill(2)
+        endhour  = str(dt_end.hour).zfill(2)
+        endtxt = '{0}{1}{2}{3}00'.format(endyear,endmonth,endday,endhour)
+        filename='{0}-{1}_proc.h5'.format(starttxt,endtxt)
+    else:
+        filename='{0}_proc.h5'.format(starttxt)
+    
     return filename
         
 def clearall():
@@ -232,7 +264,7 @@ if __name__ == '__main__':
     import MPLtools as mtools
     
     altrange=range(150,3180,30)
-    timestep='30S'
+    timestep='60S'
     os.chdir('C:\\Users\\dashamstyr\\Dropbox')
     procdir = mtools.set_dir('Select folder to process files from')
     fileproc(procdir,doplot=True,saveplot=True,showplot=False,verbose=True,

@@ -416,7 +416,7 @@ if __name__=='__main__':
     hours = ['06','12','18']
     depol_limits=(0.0,0.5,0.1)
 
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Purchase\BC CLEAR\Final Report Data')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed')
 
     filepath = mtools.get_files('Select Processed MPL file(s)', filetype = ('.h5', '*.h5'))
     

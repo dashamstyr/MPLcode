@@ -8,12 +8,22 @@ Created on Wed Apr 24 12:08:57 2013
 @author: Paul Cottle
 
 """
-
-
-
+from Tkinter import Tk
+import tkFileDialog
+import re
+import numpy as np
+import array, struct
+import pandas as pan
+import datetime
+from scipy import constants as const    
+from copy import deepcopy
+from scipy.interpolate import interp1d
+import numpy as np
+import os,sys
+import matplotlib.pyplot as plt
+from collections import OrderedDict     
+        
 def set_dir(titlestring):
-    from Tkinter import Tk
-    import tkFileDialog
      
     # Make a top-level instance and hide since it is ugly and big.
     root = Tk()
@@ -45,10 +55,6 @@ def set_dir(titlestring):
     
      
 def get_files(titlestring,filetype = ('.txt','*.txt')):
-    from Tkinter import Tk
-    import tkFileDialog
-    import re
-     
      
     # Make a top-level instance and hide since it is ugly and big.
     root = Tk()
@@ -85,28 +91,21 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
 
     #remove any {} characters from the start and end of the file names
     result = [ re.sub("^{|}$","",i) for i in result ]     
-    return result
-
     
     root.destroy()
+    return result
       
     
 def MPLtoHDF(filename, appendflag = 'False'):
-    import numpy as np
-#    import tables
-    import array
-    import pandas as pan
-    import datetime
-    from scipy import constants as const
     
     h5filename = filename.split('.')[0]+'_proc.h5'
 
     with open(filename,'rb') as binfile:
     
-        profdat_copol = {}
-        profdat_crosspol = {}
-        header = {}
-        headerdat = {}
+        profdat_copol = OrderedDict()
+        profdat_crosspol = OrderedDict()
+        header = OrderedDict()
+        headerdat = OrderedDict()
         
         profnum = 0
         
@@ -232,10 +231,11 @@ def MPLtoHDF(filename, appendflag = 'False'):
                 header[dt] = pan.Series(headerdat)
             except EOFError:
                 break
-                
-            
+        
         df_copol = pan.DataFrame.from_dict(profdat_copol, orient='index')
+        df_copol.columns=altrange
         df_crosspol = pan.DataFrame.from_dict(profdat_crosspol, orient='index')
+        df_crosspol.columns=altrange
         df_header = pan.DataFrame.from_dict(header, orient='index')
         
     store = pan.HDFStore(h5filename)
@@ -270,8 +270,7 @@ class MPL:
         
 
     def copy(self):
-        #currnetly not working!
-        from copy import deepcopy
+        #currnetly not working
         
         return MPL(deepcopy(self))
     
@@ -314,16 +313,11 @@ class MPL:
         return self
     
     def fromMPL(self, filename):
-        import numpy as np
-        import datetime
-        import array
-        import pandas as pan
-        from scipy import constants as const
         
         with open(filename,'rb') as binfile:
-            profdat_copol = {}
-            profdat_crosspol = {}
-            header = {}
+            profdat_copol = OrderedDict()
+            profdat_crosspol = OrderedDict()
+            header = OrderedDict()
             
             profnum = 0
             
@@ -361,7 +355,11 @@ class MPL:
                     minute = intarray16[6]
                     second = intarray16[7]
                                        
-                    dt = datetime.datetime(year,month,day,hour,minute,second)
+                    try:
+                        dt = datetime.datetime(year,month,day,hour,minute,second)
+                    except ValueError:
+                        print "Error extracting data from {0}".format(filename)                        
+                        break
             
                     headerdat['shotsum'] = intarray32[0]  #total number of shots collected per profile
                     headerdat['trigfreq'] = intarray32[1] #laser trigger frequency (usually 2500 Hz)
@@ -374,8 +372,6 @@ class MPL:
                     
                     headerdat['bg_avg1'] = floatarray[0] #mean background signal value for channel 1
                     headerdat['bg_std1'] = floatarray[1] #standard deviation of backgruond signal for channel 1
-            
-                    # print intarray16.itemsize, intarray32.itemsize # L vs I
             
                     headerdat['numchans'] = intarray16[8] #number of channels
                     headerdat['numbins'] = intarray32[8] #total number of bins per channel
@@ -468,7 +464,6 @@ class MPL:
         return self        
     
     def fromHDF(self, filename, verbose = False):
-        import pandas as pan
                 
         copoldat = pan.read_hdf(filename,'copol_raw')
         crosspoldat = pan.read_hdf(filename,'crosspol_raw')
@@ -498,7 +493,31 @@ class MPL:
         except KeyError:
             if verbose:
                 print "Warning: No Depol Ratio file"
-
+        SNRdict={}
+        try:            
+            tempSNR_copol=pan.read_hdf(filename,'SNR_copol_data')
+            tempSNR_depol=pan.read_hdf(filename,'SNR_depol_data')
+            SNRdict['data']=[tempSNR_copol,tempSNR_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-data file"
+        try:            
+            tempSNR_copol=pan.read_hdf(filename,'SNR_copol_NRB')
+            tempSNR_depol=pan.read_hdf(filename,'SNR_depol_NRB')
+            SNRdict['NRB']=[tempSNR_copol,tempSNR_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-NRB file"                
+        try:            
+            tempSNR=pan.read_hdf(filename,'SNR_depolrat')
+            SNRdict['depolrat']=[tempSNR]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-depolrat file"
+        
+        if SNRdict:
+            self.SNR=SNRdict
+            
         return self
     
 #    def save_to_MPL(self,filename):
@@ -614,7 +633,6 @@ class MPL:
 #            datavals.tofile(MPLout)
         
     def save_to_HDF(self, filename, appendflag = 'false'):
-        import pandas as pan
         
         store = pan.HDFStore(filename)
         
@@ -642,6 +660,20 @@ class MPL:
             df_depolrat = self.depolrat[0]
             store['depolrat'] = df_depolrat
         
+        if self.SNR:
+            for k,v in self.SNR.iteritems:
+                if len(v)==2:
+                    savename1='SNR_copol_{0}'.format(k)
+                    savename2='SNR_crosspol_{0}'.format(k)
+                    tempdf_copol=v[0]
+                    tempdf_crosspol=v[1]
+                    store[savename1]=tempdf_copol
+                    store[savename2]=tmepdf_crosspol
+                else:
+                    savename='SNR_{0}'.format(k)
+                    tempdf_copol=v[0]
+                    store[savename]=tempdf
+        
         store.close()
 
     
@@ -649,10 +681,6 @@ class MPL:
         #takes a pandas dataframe generated by mplreader and resamples on regular
         #intervals in altitude and resets the limits of the set
         #note: limits of altrange must be within original limits of altitude data
-        import numpy as np
-        import pandas as pan
-        from scipy import constants as const
-        from scipy.interpolate import interp1d
         
         dataout = []
         rsqout = []
@@ -812,8 +840,6 @@ class MPL:
         #and optionally limits it to a preset time range
         #timestep must be in timeSeries period format: numF where num=step size and
         #F = offset alias.  Ex: H = hours, M = minutes, S = seconds, L = millieconds
-        import pandas as pan
-        import numpy as np
         
         temphead = {}
         self.header.sort_index(inplace=True)
@@ -854,13 +880,15 @@ class MPL:
                 if self.rsq:
                     self.rsq[n] = self.rsq[n].loc[self.rsq[n].index>=starttime]
                 if self.NRB:
-                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index>=starttime]                                       
+                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index>=starttime]  
+                                     
             if endtime:
                 self.data[n] = self.data[n].loc[self.data[n].index<=endtime]
                 if self.rsq:
                     self.rsq[n] = self.rsq[n].loc[self.rsq[n].index<=endtime]
                 if self.NRB:
-                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index<=endtime]         
+                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index<=endtime]   
+
             if timestep:
                 self.data[n] = self.data[n].resample(timestep, how = datamethod)
                 if self.rsq:
@@ -878,13 +906,10 @@ class MPL:
             
         if verbose:
             print '... Done!'
-        
-        
+                
         return self
         
     def range_cor(self):
-        import numpy as np
-        from copy import deepcopy
         
         dataout = deepcopy(self.data)        
         bg = [self.header['bg_avg2'],self.header['bg_avg1']]
@@ -903,29 +928,33 @@ class MPL:
         Extracts data from MPL calibration files and applies it
         to a range-corrected set of mini-MPL data to convert from counts to attenuated backscatter
         """
-        import numpy as np
-        import array,struct
-        import os,sys
-        from copy import deepcopy
-        import matplotlib.pyplot as plt
-        import datetime
-        
-        olddir = os.getcwd()
         if sys.platform == 'win32':
-            newdir = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\Calibration File Archive'
+            topdir = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\Calibration File Archive'
         else:
-            newdir = '/data/lv1/pcottle/MPLCalibration'
-        os.chdir(newdir)
+            topdir = '/data/lv1/pcottle/MPLCalibration'
         
         #if data were collected before June 2013, they were collected with MPL5008 and require
         #the associated calibration files
-        if self.header.index[0] < datetime.datetime(2013,6,1):
-    
-            deadtimefile = 'MMPL5008_deadtime.bin'
-            overlapfile = 'MMPL5008_overlap.bin'
-            afterpulsefile = 'MMPL5008_afterpulse.bin'
-                
+        version=np.int(self.header['version'][0])
+        unitnum=np.int(self.header['unitnum'][0])
         
+        if unitnum==5004:
+            deadtimefile = os.path.join(topdir,'deadtimepoly_5004.bin')
+            overlapfile = os.path.join(topdir,'MiniMPL5004_Horizontal_201301141700.bin')
+            afterpulsefile = os.path.join(topdir,'5004_afterpusle_201402130600.bin')
+        elif unitnum==5008:
+            deadtimefile = os.path.join(topdir,'MMPL5008_deadtime.bin')
+            overlapfile = os.path.join(topdir,'MMPL5008_overlap.bin')
+            afterpulsefile = os.path.join(topdir,'MMPL5008_afterpulse.bin')
+        elif unitnum==5012:
+            deadtimefile = os.path.join(topdir,'MMPL5012_SPCM22625_deadtime7.bin')
+            overlapfile = os.path.join(topdir,'MMPL5012_Overlap_201307310000.bin')
+            afterpulsefile = os.path.join(topdir,'MMPL5012_Afterpulse_201308051500.mpl.bin')
+        else:
+            print "{0} is not a recognized Unit Number!".format(unitnum)
+            return unitnum
+            
+        if version==4:
             with open(deadtimefile,'rb') as binfile:
                 deadtimedat = array.array('d')
                 while True:        
@@ -956,14 +985,14 @@ class MPL:
             for n in range(self.header['numchans'][0]):
                 for i in range(len(MPLout[n].index)):
                     deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
-        
+                  
             with open(afterpulsefile, 'rb') as binfile:
                 afterpulsedat = array.array('d')
                 
                 filedat = os.stat(afterpulsefile)
                 numvals = filedat.st_size/8
                 afterpulsedat.fromfile(binfile,numvals)
-            
+                
             numpairs = (numvals-1)/2
             mean_energy = np.array(afterpulsedat[0])
             aprange = np.array(afterpulsedat[1:numpairs+1])*1000.0
@@ -1017,14 +1046,9 @@ class MPL:
                 for i in range(len(MPLout[n].index)):
                     MPLout[n].iloc[i] = (MPLout[n].iloc[i]/(interp_overlap*energy[i]))*rsq
             
-            os.chdir(olddir)
             self.NRB = MPLout
             return self
-        else:        
-            deadtimefile = 'MMPL5012_SPCM22625_deadtime7.bin'
-            overlapfile = 'MMPL5012_Overlap_201307310000.bin'
-            afterpulsefile = 'MMPL5012_Afterpulse_201308051500.mpl.bin'
-    
+        elif version==5: 
             with open(deadtimefile,'rb') as binfile:
                 deadtimedat = array.array('f')
                 while True:        
@@ -1060,11 +1084,9 @@ class MPL:
                 aprange = array.array('d')  #array of range values
                 apvals_copol = array.array('d')  #array of correction values for copol
                 apvals_crosspol = array.array('d')  #array of correction values for crosspol
-                
-                
-                
+        
+                           
                 temp = binfile.read(4)
-                apheader = temp
                 temp = binfile.read(2)
                 apversion = struct.unpack('H',temp)[0] #version number for correction file
                 temp = binfile.read(1)
@@ -1111,44 +1133,43 @@ class MPL:
                 
                 for i in range(len(MPLout[n].index)):
                     MPLout[n].iloc[i] = (MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i])/energy[i]
-                    
-            with open(overlapfile, 'rb') as binfile:
-                overlapdat = array.array('d')
-                 
-                filedat = os.stat(overlapfile)
-                numvals = filedat.st_size/8
-                overlapdat.fromfile(binfile,numvals)
-            
-            numpairs = numvals/2
-            overrange = np.array(overlapdat[:numpairs])*1000
-            overvals = np.array(overlapdat[numpairs:])    
+      
+        with open(overlapfile, 'rb') as binfile:
+            overlapdat = array.array('d')
+             
+            filedat = os.stat(overlapfile)
+            numvals = filedat.st_size/8
+            overlapdat.fromfile(binfile,numvals)
+
         
-            if showplots:
-                fig = plt.figure()
-                ax = fig.add_subplot(111)
-                ax.plot(overrange,overvals)
-                ax.set_title('Overlap Correction')
-                plt.show()
-                
-            
-            altvals = np.array(MPLout[0].columns, dtype='float')
-            interp_overlap = np.interp(altvals,overrange,overvals)
-                
-            for v in range(len(altvals)):
-                if altvals[v] > max(overrange):
-                    interp_overlap[v] = 1.0
-            
-            for n in range(self.header['numchans'][0]):     
-                rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2  #range in km for rsquared correction
-                for i in range(len(MPLout[n].index)):
-                    MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap            
-            
-            os.chdir(olddir)
-            self.NRB = MPLout
-            return self
+        numpairs = numvals/2
+        overrange = np.array(overlapdat[:numpairs])*1000
+        overvals = np.array(overlapdat[numpairs:])    
     
-    def calculate_depolrat(self):
-        import pandas as pan        
+        if showplots:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.plot(overrange,overvals)
+            ax.set_title('Overlap Correction')
+            plt.show()
+            
+        
+        altvals = np.array(MPLout[0].columns, dtype='float')
+        interp_overlap = np.interp(altvals,overrange,overvals)
+            
+        for v in range(len(altvals)):
+            if altvals[v] > max(overrange):
+                interp_overlap[v] = 1.0
+        
+        for n in range(self.header['numchans'][0]):     
+            rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2  #range in km for rsquared correction
+            for i in range(len(MPLout[n].index)):
+                MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap            
+        
+        self.NRB = MPLout
+        return self
+    
+    def calculate_depolrat(self):      
         copol = self.NRB[0]
         crosspol = self.NRB[1]
         
@@ -1161,8 +1182,6 @@ class MPL:
         return self
     
     def calculate_SNR(self,bg_alt=[],numprofs=1,verbose=False, datatypes=['all']):
-        import pandas as pan
-        import numpy as np
         """
         Calculates signal to noise ratios for mpl data
         
