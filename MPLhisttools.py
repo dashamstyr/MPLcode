@@ -34,8 +34,8 @@ def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
     filetype = file extension to look for (.mpl or .h5), defaults to .mpl
     """    
     altitudes = kwargs.get('altitudes',np.array([]))
-    starttime = kwargs.get('starttime',[])
-    endtime = kwargs.get('endtime',[])
+    starttime = kwargs.get('starttime',datetime.datetime(1970,1,1,0))
+    endtime = kwargs.get('endtime',datetime.datetime.now())
     timestep = kwargs.get('timestep',[])
     verbose = kwargs.get('verbose',False)
     SNRmask=kwargs.get('SNRmask',True)
@@ -58,15 +58,17 @@ def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
         for filename in filelist:
             if filename.endswith(filetype):
                 tempMPL=mtools.MPL()
-                print filename
-                if filetype=='.mpl':
-                    if daterange:                        
-                        if daterange[0]<=mfile.MPLtodatetime(filename)<=daterange[1]:
-                            tempMPL.fromMPL(os.path.join(root,filename))
-                        else:
+                if filetype=='.mpl':   
+                    if starttime<=mfile.MPLtodatetime(filename)<=endtime:
+                        fileinfo=os.stat(os.path.join(root,filename))
+                        if fileinfo.st_size==0:
                             continue
+                        else:
+                            tempMPL.fromMPL(os.path.join(root,filename))
+                        if verbose:
+                            print filename
                     else:
-                        tempMPL.fromMPL(os.path.join(root,filename))
+                        continue
                     
                     if timestep:
                         tempMPL = tempMPL.time_resample(timestep=timestep,verbose=verbose)
@@ -122,29 +124,31 @@ def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
         
 def dataextractor(datatype='NRB',**kwargs):
     """
-    takes a file name, opens the file and extracts the MPL data into a dataframe
+    takes a file name, or a list of MPL files
+    opens the file and extracts the MPL data into a dataframe
     and filters data based on kwargs returns an MPL class object or dataframe
     
     inputs:
-    MPLlist = list of MPL objects
     datatype = type of data to extract (defaults to NRB)
     
+    kwargs:
+    loadfiletype
+    
     """
-    MPLlist=kwargs.get('MPLlist',[])
-    frompickle=kwargs.get('frompickle',False)
-    fromHDF=kwargs.get('fromHDF',False)
+    loadfiletype=kwargs.get('loadfiletype','list')
     loadfilename=kwargs.get('loadfilename',[])
+    MPLlist=kwargs.get('MPLlist',[])
     toHDF=kwargs.get('toHDF',False)
     HDFfile=kwargs.get('HDFfile','test.h5')
     
-    if frompickle:
+    dflist=[]
+    if loadfiletype=='pickle':
         try:
             with open(loadfilename,'rb') as pf:
                 MPLlist=pickle.load(pf)
         except IOError:
             print "Could not find file named {0}".format(loadfilename)
             
-        dflist=[]
         for MPLfile in MPLlist:        
             if datatype=='Raw':
                 tempdf=MPLfile.data[0]
@@ -159,12 +163,12 @@ def dataextractor(datatype='NRB',**kwargs):
             dflist.append(tempdf)
         
         dfout=pan.concat(dflist)
-    elif fromHDF:
+    elif loadfiletype=='HDF':
         try:
             dfout=pan.read_hdf(loadfilename,datatype)
         except IOError:
             print "Could not find file named {0}".format(loadfilename)
-    else:
+    elif loadfiletype=='list':
         for MPLfile in MPLlist:        
             if datatype=='Raw':
                 tempdf=MPLfile.data[0]
@@ -179,6 +183,9 @@ def dataextractor(datatype='NRB',**kwargs):
             dflist.append(tempdf)
         
         dfout=pan.concat(dflist)
+    else:
+        print 'Input file type {0} not recognized!'.format(loadfiletype)
+        return dflist
             
     if toHDF:
         store=pan.HDFStore(HDFfile)
@@ -197,7 +204,7 @@ def histplot1D(df,**kwargs):
     cumulative=kwargs.get('cumulative',False)
     
     doplot=kwargs.get('doplot',True)    
-    saveplot=kwargs.get('savefile',False)
+    saveplot=kwargs.get('saveplot',False)
     plotfilename=kwargs.get('plotfilename','1Dhist_test.png')
     fsize=kwargs.get('fsize',32) #baseline font size
     ar=kwargs.get('ar',1.0)  #aspect ratio
@@ -424,7 +431,6 @@ def althistplot(dfin,**kwargs):
 
     
 def altticks(ax, axisdat, numticks = 5, fsize = 21, tcolor = 'k'):
-    import matplotlib.pyplot as plt
 
     numpoints = len(axisdat)
     step = numpoints//numticks
@@ -443,28 +449,36 @@ def altticks(ax, axisdat, numticks = 5, fsize = 21, tcolor = 'k'):
 
 
 if __name__=="__main__":
+    
 
     topdir='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA'
-    savefile='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\histpickle_all.p'
-    HDFfile='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\histdat_all.h5'
-    startdate=datetime.datetime(2013,4,23,00)
-    enddate=datetime.datetime(2013,4,23,1)
-    altitudes=np.arange(150,15000,30)
-    timestep='600S'
-    mplfiles=filegetter(filedir=topdir,altitudes=altitudes,starttime=startdate,endtime=enddate,timestep=timestep,topickle=True,picklefile=savefile)
+    picklefile=mtools.get_files('Select pickle file to histogram',filetype=('.p','*.p'))[0]
+#    startdate=datetime.datetime(2013,1,1,00)
+#    enddate=datetime.datetime(2013,5,4,1)
+#    altitudes=np.arange(150,15000,30)
+#    timestep='600S'
+#    mplfiles=filegetter(filedir=topdir,altitudes=altitudes,starttime=startdate,
+#                        endtime=enddate,timestep=timestep,topickle=False,
+#                        picklefile=savefile,verbose=True)
     
-    with open(savefile,'rb') as sfile:
-        allfiles=pickle.load(sfile)
+#    with open(savefile,'rb') as sfile:
+#        allfiles=pickle.load(sfile)
     
-    datatypes={'NRB':['NRBhistdat.h5',(0.0,5.0)],'Depolrat':['Depolhistdat.h5',(0,1.0)],'SNR':['SNRhistdat.h5',(0,10.0)]}
+    
+    datatypes={'NRB':['NRBhistdat_sigma.h5',(0.0,5.0),'NRBhistplot_sigma.png'],
+                      'Depolrat':['Depolhistdat_sigma.h5',(0,1.0),'Depolhistplot_sigma.png'],
+                      'SNR':['SNRhistdat_sigma.h5',(0,10.0),'SNRhistplot_sigma.png']}
     alldict={}
     n=0
     for dtype,dspecs in datatypes.iteritems():
-        df=dataextractor(datatype=dtype,fromHDF=True,loadfilename=os.path.join(topdir,dspecs[0]),toHDF=False)
+        df=dataextractor(datatype=dtype,loadfiletype='pickle',loadfilename=picklefile,
+                         toHDF=True,HDFfile=os.path.join(topdir,dspecs[0]))
         dfplot=df[df>0]
         dfplot.fillna(value=-99999,inplace=True)    
         
-        alldict[dtype]=histplot1D(df,numbins=100,binrange=dspecs[1],xlabel=dtype,fignum=n,cumulative=False,normalize=True)
+        alldict[dtype]=histplot1D(df,numbins=100,binrange=dspecs[1],xlabel=dtype,
+                                    fignum=n,cumulative=False,normalize=True,
+                                    saveplot=True,plotfilename=os.path.join(topdir,dspecs[2]))
         n+=1
 
 

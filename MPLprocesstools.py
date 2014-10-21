@@ -4,6 +4,7 @@ Created on Fri Jan 31 10:54:41 2014
 
 @author: dashamstyr
 """
+import os,sys
 import pandas as pan
 import numpy as np
 from copy import deepcopy
@@ -1046,6 +1047,10 @@ def colormask_plot(maskin,colordict,**kwargs):
     altrange=kwargs.get('altrange',[])
     datetimerange=kwargs.get('datetimerange',[])
     SNRmask=kwargs.get('SNRmask',[])
+    saveplot=kwargs.get('saveplot',True)
+    plotfilepath=kwargs.get('plotfilepath',[])
+    plotfilename=kwargs.get('plotfilename','testmaskfig.png')
+    dpi = kwargs.get('dpi',100)
 
     cmapdict =  {'red':    ((0.0, 176.0/255.0, 176.0/255.0),
                             (0.105, 176.0/255.0, 255.0/255.0),
@@ -1120,7 +1125,15 @@ def colormask_plot(maskin,colordict,**kwargs):
     
     sortedlabels=[s[0] for s in sorted(colordict.iteritems(), key=operator.itemgetter(1))]
     cbarlabels=cbar1.set_ticklabels(sortedlabels)
-
+    
+    if saveplot:
+        if plotfilepath:
+            if os.path.isdir(plotfilepath):
+                savename=os.path.join(plotfilepath,plotfilename)
+            else:
+                os.mkdir(plotfilepath)
+                savename=os.path.join(plotfilepath,plotfilename)
+        fig.canvas.print_figure(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
     fig.canvas.draw()
     
 def findalllayers(filename,**kwargs):    
@@ -1177,35 +1190,49 @@ def layermaskplot(mpl,**kwargs):
         molecular=kwargs.get('molecular',[])
         layers=kwargs.get('layers',[])
         PBL=kwargs.get('PBL',[])
-        
+    SNRmask=kwargs.get('SNRmask',True)    
     SNRmasktype=kwargs.get('SNRmasktype','data')
     SNRthresh=kwargs.get('SNRthresh',1)
     hours=kwargs.get('hours',['03','06','09','12','15','18','21'])
     altrange=kwargs.get('altrange',np.arange(0,15030,30))
+    saveplot=kwargs.get('saveplot',True)    
+    plotfilepath=kwargs.get('plotfilepath',[])
+    plotfilename=kwargs.get('plotfilename','testmaskplot.png')
     
-    SNRmask = mpl.SNR[SNRmasktype][0]>=SNRthresh
-    SNRmask.replace(False,np.nan,inplace=True)
+    
+    if SNRmask:
+        MPLmasked = mpl.SNR[SNRmasktype][0]>=SNRthresh
+        MPLmasked.replace(False,np.nan,inplace=True)
+    else:
+        SNRmasked=[]
     
     mask,colordict=colormask(mpl,PBL,molecular,layers)
     minalt=altrange[0]
     maxalt=altrange[-1]
-    colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
+    kwargs={'hours':hours,'altrange':(minalt,maxalt),'SNRmask':SNRmask,'saveplot':saveplot,
+            'plotfilepath':plotfilepath,'plotfilename':plotfilename}
+    colormask_plot(mask,colordict,**kwargs)
 
 if __name__=='__main__':
     
 
     os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed')
-    filename='201405030000-201405030900_proc.h5'
-    
+    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Figures'
+    filepath=mtools.get_files('Select processed file',filetype=('.h5','*.h5'))[0]
+    filename=os.path.split(filepath)[-1]
+    plotfilename='{0}_maskplot.png'.format(filename.split('_proc')[0])
     timestep='120S'
     SNRthreshold=3
-#    layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
-    mpl=mtools.MPL()
-    mpl.fromHDF(filename)
-    mpl.time_resample(timestep=timestep)
-    mpl.calc_all()
-    #layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],PBL=layerdict['pbl'])
-    layermaskplot(mpl,fromHDF=True,HDFfile='testmasksall.h5')
+    layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
+    
+    layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],
+                  PBL=layerdict['pbl'],saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
+#    mpl=mtools.MPL()
+#    mpl.fromHDF(filename)
+#    mpl.time_resample(timestep=timestep)
+#    mpl.calc_all()
+    
+    #layermaskplot(mpl,fromHDF=True,HDFfile='testmasksall.h5')
     
 #    mpltest=mtools.MPL()
 #    mpltest.fromHDF(filename)

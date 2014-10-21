@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import MPLplot as mplot
 import pandas as pan
 
-
 def fileproc(newdir, **kwargs):
 
     """
@@ -38,6 +37,7 @@ def fileproc(newdir, **kwargs):
     interactive = kwargs.get('interactive',True)
     doplot = kwargs.get('doplot',False)
     saveplot = kwargs.get('saveplot',False)
+    savetype = kwargs.get('savetype','standard')
     showplot = kwargs.get('showplot',False)
     NRBmask = kwargs.get('NRBmask',False)
     SNRmask = kwargs.get('SNRmask',False)
@@ -107,7 +107,12 @@ def fileproc(newdir, **kwargs):
     
     if verbose:
         print 'Saving '+d_filename
-    MPLdat_event.save_to_HDF(d_filename)
+    
+    if savetype=='standard':
+        MPLdat_event.save_to_HDF(d_filename)
+    elif savetype=='IDL':
+        MPLdat_event.save_to_IDL(d_filename)
+    
     if verbose:
         print 'Done'
     
@@ -121,7 +126,7 @@ def fileproc(newdir, **kwargs):
     
     os.chdir(olddir)
     
-
+    
 def quickplot(filename, datadir = [], savefigs = False):
     
 #    MPLdat = mtools.MPL()
@@ -263,12 +268,12 @@ def clearall():
 if __name__ == '__main__':
     import MPLtools as mtools
     
-    altrange=range(150,3180,30)
+    altrange=range(150,15180,30)
     timestep='60S'
-    os.chdir('C:\\Users\\dashamstyr\\Dropbox')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data')
     procdir = mtools.set_dir('Select folder to process files from')
-    fileproc(procdir,doplot=True,saveplot=True,showplot=False,verbose=True,
-             altrange=altrange,timestep=timestep,NRB_limits=(0.0,0.5,0.1))
+    fileproc(procdir,doplot=True,saveplot=False,showplot=True,verbose=True,
+             altrange=altrange,timestep=timestep,NRB_limits=(0.0,1.0,0.2),savetype='IDL')
     
 #    plotfile = mtools.get_files('Select File to Plot', filetype = ('.h5', '*.h5'))
 #    quickplot(plotfile)

@@ -18,10 +18,10 @@ import datetime
 from scipy import constants as const    
 from copy import deepcopy
 from scipy.interpolate import interp1d
-import numpy as np
 import os,sys
 import matplotlib.pyplot as plt
-from collections import OrderedDict     
+from collections import OrderedDict 
+import h5py    
         
 def set_dir(titlestring):
      
@@ -313,7 +313,7 @@ class MPL:
         return self
     
     def fromMPL(self, filename):
-        
+        print filename
         with open(filename,'rb') as binfile:
             profdat_copol = OrderedDict()
             profdat_crosspol = OrderedDict()
@@ -661,20 +661,102 @@ class MPL:
             store['depolrat'] = df_depolrat
         
         if self.SNR:
-            for k,v in self.SNR.iteritems:
+            for k,v in self.SNR.iteritems():
                 if len(v)==2:
                     savename1='SNR_copol_{0}'.format(k)
                     savename2='SNR_crosspol_{0}'.format(k)
                     tempdf_copol=v[0]
                     tempdf_crosspol=v[1]
                     store[savename1]=tempdf_copol
-                    store[savename2]=tmepdf_crosspol
+                    store[savename2]=tempdf_crosspol
                 else:
                     savename='SNR_{0}'.format(k)
                     tempdf_copol=v[0]
-                    store[savename]=tempdf
+                    store[savename]=tempdf_copol
         
         store.close()
+    
+    def save_to_IDL(self,filename):
+        def datetime_to_epoch(d):
+            epoch=np.datetime64(datetime.datetime(1970,1,1))
+            t=(d-epoch)/np.timedelta64(1,'s')
+            return t
+            
+        with h5py.File(filename,'w') as f:        
+            headergrp=f.create_group('header')
+            headergrp.create_dataset('keys',data=np.array(self.header.columns.values,dtype='str'))
+            datetime_index=[datetime_to_epoch(val) for val in self.header.index.values]
+            headergrp.create_dataset('timetag',data=datetime_index)
+            headergrp.create_dataset('values',data=self.header.values)
+            
+            if self.data:
+                df_copol = self.data[0]
+                df_crosspol = self.data[1]
+                tempgrp=f.create_group('raw_data')
+                tempcopol=tempgrp.create_group('copol')
+                datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                tempcopol.create_dataset('timetag',data=datetime_index)
+                tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                tempcopol.create_dataset('values',data=df_copol.values)
+                tempcrosspol=tempgrp.create_group('crosspol')
+                tempcrosspol.create_dataset('timetag',data=datetime_index)
+                tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                tempcrosspol.create_dataset('values',data=df_crosspol.values)
+            if self.rsq:
+                df_copol = self.rsq[0]
+                df_crosspol = self.rsq[1]
+                tempgrp=f.create_group('range_squared')
+                tempcopol=tempgrp.create_group('copol')
+                datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                tempcopol.create_dataset('timetag',data=datetime_index)
+                tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                tempcopol.create_dataset('values',data=df_copol.values)
+                tempcrosspol=tempgrp.create_group('crosspol')
+                tempcrosspol.create_dataset('timetag',data=datetime_index)
+                tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                tempcrosspol.create_dataset('values',data=df_crosspol.values)
+            if self.NRB:
+                df_copol = self.NRB[0]
+                df_crosspol = self.NRB[1]
+                tempgrp=f.create_group('NRB')
+                tempcopol=tempgrp.create_group('copol')
+                datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                tempcopol.create_dataset('timetag',data=datetime_index)
+                tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                tempcopol.create_dataset('values',data=df_copol.values)
+                tempcrosspol=tempgrp.create_group('crosspol')
+                tempcrosspol.create_dataset('timetag',data=datetime_index)
+                tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                tempcrosspol.create_dataset('values',data=df_crosspol.values)
+            if self.depolrat:
+                df = self.depolrat[0]
+                tempgrp=f.create_group('depol_ratio')
+                datetime_index=[datetime_to_epoch(d) for d in df.index.values]
+                tempgrp.create_dataset('timetag',data=datetime_index)
+                tempgrp.create_dataset('altitude',data=df.columns.values)
+                tempgrp.create_dataset('values',data=df.values)
+            if self.SNR:
+                tempgrp=f.create_group('SNR')
+                for k,v in self.SNR.iteritems():
+                    tempsubgrp=tempgrp.create_group(k)
+                    if len(v)==2:
+                        df_copol=v[0]
+                        df_crosspol=v[1]
+                        tempcopol=tempsubgrp.create_group('copol')
+                        datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                        tempcopol.create_dataset('timetag',data=datetime_index)
+                        tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                        tempcopol.create_dataset('values',data=df_copol.values)
+                        tempcrosspol=tempsubgrp.create_group('crosspol')
+                        tempcrosspol.create_dataset('timetag',data=datetime_index)
+                        tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                        tempcrosspol.create_dataset('values',data=df_crosspol.values)
+                    else:
+                        df=v[0]
+                        datetime_index=[datetime_to_epoch(d) for d in df.index.values]
+                        tempsubgrp.create_dataset('timetag',data=datetime_index)
+                        tempsubgrp.create_dataset('altitude',data=df.columns.values)
+                        tempsubgrp.create_dataset('values',data=df.values)
 
     
     def alt_resample(self,altrange,underfill=True,verbose=False):
@@ -954,9 +1036,9 @@ class MPL:
             print "{0} is not a recognized Unit Number!".format(unitnum)
             return unitnum
             
-        if version==4:
+        if unitnum==5008:
             with open(deadtimefile,'rb') as binfile:
-                deadtimedat = array.array('d')
+                deadtimedat = array.array('f')
                 while True:        
                     try:
                         deadtimedat.fromfile(binfile, 1)
@@ -996,7 +1078,7 @@ class MPL:
             numpairs = (numvals-1)/2
             mean_energy = np.array(afterpulsedat[0])
             aprange = np.array(afterpulsedat[1:numpairs+1])*1000.0
-            apvals = np.array(afterpulsedat[numpairs+1:])
+            apvals = np.array(afterpulsedat[numpairs+1:])/mean_energy
             
             if showplots:
                 fig = plt.figure()
@@ -1048,7 +1130,7 @@ class MPL:
             
             self.NRB = MPLout
             return self
-        elif version==5: 
+        elif unitnum==5004 or unitnum==5012: 
             with open(deadtimefile,'rb') as binfile:
                 deadtimedat = array.array('f')
                 while True:        
@@ -1133,7 +1215,7 @@ class MPL:
                 
                 for i in range(len(MPLout[n].index)):
                     MPLout[n].iloc[i] = (MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i])/energy[i]
-      
+            
         with open(overlapfile, 'rb') as binfile:
             overlapdat = array.array('d')
              
@@ -1152,8 +1234,7 @@ class MPL:
             ax.plot(overrange,overvals)
             ax.set_title('Overlap Correction')
             plt.show()
-            
-        
+
         altvals = np.array(MPLout[0].columns, dtype='float')
         interp_overlap = np.interp(altvals,overrange,overvals)
             
@@ -1169,7 +1250,7 @@ class MPL:
         self.NRB = MPLout
         return self
     
-    def calculate_depolrat(self):      
+    def calculate_depolrat(self): 
         copol = self.NRB[0]
         crosspol = self.NRB[1]
         
