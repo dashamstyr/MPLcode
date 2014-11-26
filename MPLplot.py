@@ -42,36 +42,8 @@ def custom_cmap(maptype,numvals,overcolor,undercolor):
     
     return my_cmap
     
-def depol_plot(fig,ax,data,xdata,ydata,**kwargs):    
-    #set colormap to be the same as 'jet' with the addition of white color for
-    #depol ratios set to identically zero because they couldn't be calculated
-    ar=kwargs.get('ar',2.0)
-    vrange=kwargs.get('vrange',[0,1])
-    fsize=kwargs.get('fsize',21)
-    maptype=kwargs.get('maptype','customjet')
-    orientation=kwargs.get('orientation','Vertical')
-    overcolor=kwargs.get('overcolor','w')
-    undercolor=kwargs.get('undercolor','k')
-    numvals=kwargs.get('numvals',50)
-    
-    my_cmap=custom_cmap(maptype=maptype,numvals=numvals,overcolor=overcolor,undercolor=undercolor)    
-    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
-    forceAspect(ax,ar)        
-    altticks(ax, ydata, fsize=fsize)  
-    if orientation=='vertical':
-        ax.set_ylabel('Altitude [m]', fontsize = fsize+4, labelpad = 15)
-    elif orientation=='horizontal':
-        ax.set_ylabel('Horizontal Range [m]', fontsize = fsize+4, labelpad = 15)
-    for line in ax.yaxis.get_ticklines():
-        line.set_markersize(10)
-        line.set_markeredgewidth(1)        
-    ax.axis('tight')
+def top_plot(ax, data, xdata, ydata, **kwargs):    
 
-    return im
-
-def backscatter_plot(fig, ax, data, xdata, ydata, **kwargs):    
-    #set colormap to be the same as 'jet' with the addition of white color for
-    #depol ratios set to identiacally zero because they couldn't be calculated
     ar=kwargs.get('ar',2.0)
     vrange=kwargs.get('vrange',[0,1])
     fsize=kwargs.get('fsize',21)
@@ -96,7 +68,32 @@ def backscatter_plot(fig, ax, data, xdata, ydata, **kwargs):
     ax.axis('tight')
 
     return im
+
+def bottom_plot(fig,ax,data,xdata,ydata,**kwargs):    
+
+    ar=kwargs.get('ar',2.0)
+    vrange=kwargs.get('vrange',[0,1])
+    fsize=kwargs.get('fsize',21)
+    maptype=kwargs.get('maptype','customjet')
+    orientation=kwargs.get('orientation','Vertical')
+    overcolor=kwargs.get('overcolor','w')
+    undercolor=kwargs.get('undercolor','k')
+    numvals=kwargs.get('numvals',50)
     
+    my_cmap=custom_cmap(maptype=maptype,numvals=numvals,overcolor=overcolor,undercolor=undercolor)    
+    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
+    forceAspect(ax,ar)        
+    altticks(ax, ydata, fsize=fsize)  
+    if orientation=='vertical':
+        ax.set_ylabel('Altitude [m]', fontsize = fsize+4, labelpad = 15)
+    elif orientation=='horizontal':
+        ax.set_ylabel('Horizontal Range [m]', fontsize = fsize+4, labelpad = 15)
+    for line in ax.yaxis.get_ticklines():
+        line.set_markersize(10)
+        line.set_markeredgewidth(1)        
+    ax.axis('tight')
+
+    return im    
 
 def forceAspect(ax,aspect=1):
     im = ax.get_images()
@@ -231,7 +228,16 @@ def vertprof(df, altrange, exact_times, plot_type = 'line', zeromask = False,
     plt.show()
     
     if savefig:
-        plt.savefig(filename)        
+        plt.savefig(filename) 
+
+def align_yaxis(ax1, v1, ax2, v2):
+    """adjust ax2 ylimit so that v2 in ax2 is aligned to v1 in ax1"""
+    _, y1 = ax1.transData.transform((0, v1))
+    _, y2 = ax2.transData.transform((0, v2))
+    inv = ax2.transData.inverted()
+    _, dy = inv.transform((0, 0)) - inv.transform((0, y1-y2))
+    miny, maxy = ax2.get_ylim()
+    ax2.set_ylim(miny+dy, maxy+dy)
     
 def doubleplot(datafile,**kwargs):    
     """
@@ -248,8 +254,8 @@ def doubleplot(datafile,**kwargs):
     fsize = baseline font size
     ar = aspect ratio
     figheight = figure height in inches
-    NRB_limits = (min,max,step) defines color scale for NRB
-    depol_limits = (min,max,step) defines color scale for depol
+    topplot_limits = (min,max,step) defines color scale for NRB
+    bottomplot_limits = (min,max,step) defines color scale for depol
     dpi = plot resolutoion in dots per inch
     savefile = boolean to determine whather plot will be saved
     savefilepath = location to save file
@@ -269,12 +275,14 @@ def doubleplot(datafile,**kwargs):
     fsize = kwargs.get('fsize',18) #baseline font size
     ar = kwargs.get('ar',2.0)  #aspect ratio
     figheight = kwargs.get('figheight',12) #inches    
-    NRB_limits = kwargs.get('NRB_limits',(0.0,1.0,0.2))  
-    depol_limits = kwargs.get('depol_limits',(0.0,0.5,0.1))
+    topplot_limits = kwargs.get('topplot_limits',(0.0,1.0,0.2))  
+    bottomplot_limits = kwargs.get('bottomplot_limits',(0.0,0.5,0.1))
     dpi = kwargs.get('dpi',100)
     saveplot = kwargs.get('saveplot',True)
     colormap=kwargs.get('colormap','customjet')
     orientation=kwargs.get('orientation','vertical')
+    toptype=kwargs.get('toptype','NRB')
+    bottomtype=kwargs.get('bottomtype','depol')
     
     if type(datafile)==str:
         savefilename = kwargs.get('savefilename','{0}.png'.format(datafile.split('.')[0]))
@@ -286,13 +294,13 @@ def doubleplot(datafile,**kwargs):
     SNRmask = kwargs.get('SNRmask',False)
     SNRthresh = kwargs.get('SNRthresh',3) 
     
-    NRB_min = NRB_limits[0]
-    NRB_max = NRB_limits[1]
-    NRB_step = NRB_limits[2]
+    topplot_min = topplot_limits[0]
+    topplot_max = topplot_limits[1]
+    topplot_step = topplot_limits[2]
     
-    depol_min = depol_limits[0]
-    depol_max = depol_limits[1]
-    depol_step = depol_limits[2]
+    bottomplot_min = bottomplot_limits[0]
+    bottomplot_max = bottomplot_limits[1]
+    bottomplot_step = bottomplot_limits[2]
     
     if type(datafile) in [str,unicode]:
         MPLevent = mtools.MPL()
@@ -301,8 +309,7 @@ def doubleplot(datafile,**kwargs):
     else:
         MPLevent = datafile
 
-    if not MPLevent.depolrat:
-        MPLevent.calculate_depolrat()
+    
         
     if len(altrange)>0:
         MPLevent.alt_resample(altrange)    
@@ -312,17 +319,36 @@ def doubleplot(datafile,**kwargs):
         
       
     #Now generate a new figure.
-    
-    if SNRmask:
-        MPLevent=mproc.SNR_mask_depol(MPLevent)
-    
-    copol = MPLevent.NRB[0]
-    depol = MPLevent.depolrat[0]
         
-    copol.fillna(-99999,inplace=True)
-    depol.fillna(-99999,inplace=True)
-    alt = copol.columns
-    datetime = copol.index    
+    if toptype=='NRB':
+        topdat = MPLevent.NRB[0]
+        toptitle='Normalized Relative Backscatter'
+        topunits='${counts*km^{2}}/{\mu s*\mu J}$'
+    elif toptype=='backscatter':
+        topdat = MPLevent.backscatter[0]
+        toptitle='Backscatter Coefficient'
+        topunits='$m^{-1}sr^{-1}$'
+    
+    if bottomtype=='depol':
+        if not MPLevent.depolrat:
+            MPLevent.calculate_depolrat()
+        bottomdat = MPLevent.depolrat[0]
+        
+        if SNRmask:
+            MPLevent=mproc.SNR_mask_depol(MPLevent)
+        bottomtitle='Linear Depolarization Ratio'
+        bottomunits=[]
+        
+        
+    elif bottomtype=='extinction':
+        bottomdat = MPLevent.extinction[0]
+        bottomtitle='Extinction Coefficient'
+        bottomunits='$m^{-1}$'
+        
+    topdat.fillna(-99999,inplace=True)
+    bottomdat.fillna(-99999,inplace=True)
+    alt = topdat.columns
+    dtindex = topdat.index    
     
     #create figure and plot image of depolarization ratios    
     plt.rc('font', family='serif', size=fsize)
@@ -337,32 +363,33 @@ def doubleplot(datafile,**kwargs):
         print 'Generating Figure'
         
     ax1 = fig.add_subplot(2,1,1)
-    im1 = backscatter_plot(fig, ax1,copol.T[::-1],datetime,alt[::-1],ar=ar, 
-                           vrange=(NRB_min,NRB_max),fsize=fsize,maptype=colormap,
+    im1 = top_plot(ax1,topdat.T[::-1],dtindex,alt[::-1],ar=ar, 
+                           vrange=(topplot_min,topplot_max),fsize=fsize,maptype=colormap,
                             orientation=orientation)
     cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6, extend='both')
-    cbar1.set_ticks(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
-    cbar1.set_ticklabels(np.arange(NRB_min,NRB_max+NRB_step,NRB_step))
+    cbar1.set_ticks(np.arange(topplot_min,topplot_max+topplot_step,topplot_step))
+    cbar1.set_ticklabels(np.arange(topplot_min,topplot_max+topplot_step,topplot_step))
     cbar1.ax.tick_params(labelsize = fsize)
-    cbar1.ax.set_ylabel('$[counts*km^{2}/(\mu s*\mu J)$')
-    dateticks(ax1, datetime, hours = hours, fsize = fsize, tcolor = 'w')
+    cbar1.ax.set_ylabel(topunits)
+    dateticks(ax1, dtindex, hours = hours, fsize = fsize, tcolor = 'w')
     ax1.set_xticklabels([])
-    t1 = ax1.set_title('Normalized Relative Backscatter', fontsize = fsize+10)
+    t1 = ax1.set_title(toptitle, fontsize = fsize+10)
     t1.set_y(1.03)
             
     ax2 = fig.add_subplot(2,1,2)
-    im2 = depol_plot(fig, ax2, depol.T[::-1],datetime,alt[::-1],ar=ar, 
-                     vrange=(depol_min,depol_max),fsize=fsize,maptype=colormap,
+    im2 = bottom_plot(fig, ax2, bottomdat.T[::-1],dtindex,alt[::-1],ar=ar, 
+                     vrange=(bottomplot_min,bottomplot_max),fsize=fsize,maptype=colormap,
                         orientation=orientation)
     cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6, extend='both')
-    cbar2.set_ticks(np.arange(depol_min,depol_max+depol_step,depol_step))
-    cbar2.set_ticklabels(np.arange(depol_min,depol_max+depol_step,depol_step))
+    cbar2.set_ticks(np.arange(bottomplot_min,bottomplot_max+bottomplot_step,bottomplot_step))
+    cbar2.set_ticklabels(np.arange(bottomplot_min,bottomplot_max+bottomplot_step,bottomplot_step))
     cbar2.ax.tick_params(labelsize = fsize)
+    cbar2.ax.set_ylabel(bottomunits)
     #set axis ranges and tickmarks based on data ranges
-    dateticks(ax2, datetime, hours = hours, fsize = fsize)
+    dateticks(ax2, dtindex, hours = hours, fsize = fsize)
     ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
     fig.autofmt_xdate()
-    t2 = ax2.set_title('Linear Depolarization Ratio',fontsize = fsize+10)
+    t2 = ax2.set_title(bottomtitle,fontsize = fsize+10)
     t2.set_y(1.03)    
     
     
@@ -390,8 +417,8 @@ if __name__=='__main__':
     endtime = []
     timestep = '120S'
     hours = ['03','06','09','12','15','18','21']
-    depol_limits=(0.0,0.5,0.1)
-    NRB_limits=(0.0,1.0,0.2)
+    bottomplot_limits=(0.0,0.5,0.1)
+    topplot_limits=(0.0,1.0,0.2)
 
     os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed')
 
@@ -427,7 +454,7 @@ if __name__=='__main__':
     
     kwargs = {'saveplot':True,'showplot':True,'verbose':True,
                 'savefilepath':savepath,'savefilename':savefilename,
-                'hours':hours,'depol_limits':depol_limits,'NRB_limits':NRB_limits,'SNRmask':True,
+                'hours':hours,'bottomplot_limits':bottomplot_limits,'topplot_limits':topplot_limits,'SNRmask':True,
                 'colormap':'customjet','orientation':'vertical'}
     
     doubleplot(MPLevent,**kwargs)

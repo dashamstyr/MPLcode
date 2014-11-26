@@ -452,14 +452,16 @@ if __name__=="__main__":
     
 
     topdir='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA'
-    picklefile=mtools.get_files('Select pickle file to histogram',filetype=('.p','*.p'))[0]
-#    startdate=datetime.datetime(2013,1,1,00)
-#    enddate=datetime.datetime(2013,5,4,1)
-#    altitudes=np.arange(150,15000,30)
-#    timestep='600S'
-#    mplfiles=filegetter(filedir=topdir,altitudes=altitudes,starttime=startdate,
-#                        endtime=enddate,timestep=timestep,topickle=False,
-#                        picklefile=savefile,verbose=True)
+    savefile='histpicle_local.p'
+    os.chdir(topdir)
+#    picklefile=mtools.get_files('Select pickle file to histogram',filetype=('.p','*.p'))[0]
+    startdate=datetime.datetime(2013,1,1,00)
+    enddate=datetime.datetime(2014,11,4,1)
+    altitudes=np.arange(150,15000,30)
+    timestep='600S'
+    mplfiles=filegetter(filedir=topdir,altitudes=altitudes,starttime=startdate,
+                        endtime=enddate,timestep=timestep,topickle=True,
+                        picklefile=savefile,verbose=True)
     
 #    with open(savefile,'rb') as sfile:
 #        allfiles=pickle.load(sfile)

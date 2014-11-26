@@ -21,229 +21,7 @@ from scipy.interpolate import interp1d
 import os,sys
 import matplotlib.pyplot as plt
 from collections import OrderedDict 
-import h5py    
-        
-def set_dir(titlestring):
-     
-    # Make a top-level instance and hide since it is ugly and big.
-    root = Tk()
-    root.withdraw()
-    
-    # Make it almost invisible - no decorations, 0 size, top left corner.
-    root.overrideredirect(True)
-    root.geometry('0x0+0+0')
-#    
-    # Show window again and lift it to top so it can get focus,
-    # otherwise dialogs will end up behind the terminal.
-    root.deiconify()
-    root.attributes("-topmost",1)
-    root.focus_force()
-    
-    file_path = tkFileDialog.askdirectory(parent=root,title=titlestring)
-     
-    if file_path != "":
-       return str(file_path)
-     
-    else:
-       print "you didn't open anything!"
-    
-    # Get rid of the top-level instance once to make it actually invisible.
-    root.destroy() 
-     
-
-       
-    
-     
-def get_files(titlestring,filetype = ('.txt','*.txt')):
-     
-    # Make a top-level instance and hide since it is ugly and big.
-    root = Tk()
-    root.withdraw()
-    
-    # Make it almost invisible - no decorations, 0 size, top left corner.
-    root.overrideredirect(True)
-    root.geometry('0x0+0+0')
-#    
-    # Show window again and lift it to top so it can get focus,
-    # otherwise dialogs will end up behind the terminal.
-    root.deiconify()
-    root.attributes("-topmost",1)
-    root.focus_force()
-
-    filenames = []
-     
-    filenames = tkFileDialog.askopenfilename(title=titlestring, filetypes=[filetype],multiple='True')
-    
-    #do nothing if already a python list
-    if filenames == "": 
-        print "You didn't open anything!"  
-        return
-        
-    if isinstance(filenames,list): return filenames
-
-    #http://docs.python.org/library/re.html
-    #the re should match: {text and white space in brackets} AND anynonwhitespacetokens
-    #*? is a non-greedy match for any character sequence
-    #\S is non white space
-
-    #split filenames string up into a proper python list
-    result = re.findall("{.*?}|\S+",filenames)
-
-    #remove any {} characters from the start and end of the file names
-    result = [ re.sub("^{|}$","",i) for i in result ]     
-    
-    root.destroy()
-    return result
-      
-    
-def MPLtoHDF(filename, appendflag = 'False'):
-    
-    h5filename = filename.split('.')[0]+'_proc.h5'
-
-    with open(filename,'rb') as binfile:
-    
-        profdat_copol = OrderedDict()
-        profdat_crosspol = OrderedDict()
-        header = OrderedDict()
-        headerdat = OrderedDict()
-        
-        profnum = 0
-        
-        while True:
-            try:
-                intarray16 = array.array('H')
-                intarray32 = array.array('I') # L is 8 byte on Xenon
-                floatarray = array.array('f')
-                byte_array = array.array('B')
-                copolvals = array.array('f')  
-                crosspolvals = array.array('f')  
-                
-                intarray16.fromfile(binfile, 8)
-                intarray32.fromfile(binfile, 8)
-                floatarray.fromfile(binfile, 2)
-                intarray16.fromfile(binfile, 1)
-                intarray32.fromfile(binfile, 1)
-                floatarray.fromfile(binfile, 2)
-                intarray16.fromfile(binfile, 3)
-                floatarray.fromfile(binfile, 8)
-                byte_array.fromfile(binfile, 2)
-                floatarray.fromfile(binfile, 2)
-                byte_array.fromfile(binfile, 1)
-                intarray16.fromfile(binfile, 1)
-                byte_array.fromfile(binfile, 1)
-                intarray16.fromfile(binfile, 3)
-                
-                headerdat['unitnum'] = intarray16[0]
-                headerdat['version'] = intarray16[1]
-                year = intarray16[2]
-                month = intarray16[3]
-                day = intarray16[4]
-                hour = intarray16[5]
-                minute = intarray16[6]
-                second = intarray16[7]
-                dt = datetime.datetime(year,month,day,hour,minute,second)
-            
-                headerdat['shotsum'] = intarray32[0]  #total number of shots collected per profile
-                headerdat['trigfreq'] = intarray32[1] #laser trigger frequency (usually 2500 Hz)
-                headerdat['energy'] = intarray32[2]/1000.0  #mean of laser energy monitor in uJ
-                headerdat['temp_0'] = intarray32[3]/1000.0  #mean of A/D#0 readings*100
-                headerdat['temp_1'] = intarray32[4]/1000.0  #mean of A/D#1 readings*100
-                headerdat['temp_2'] = intarray32[5]/1000.0  #mean of A/D#2 readings*100
-                headerdat['temp_3'] = intarray32[6]/1000.0  #mean of A/D#3 readings*100
-                headerdat['temp_4'] = intarray32[7]/1000.0  #mean of A/D#4 readings*100
-                
-                headerdat['bg_avg1'] = floatarray[0] #mean background signal value for channel 1
-                headerdat['bg_std1'] = floatarray[1] #standard deviation of backgruond signal for channel 1
-            
-                headerdat['numchans'] = intarray16[8] #number of channels
-                headerdat['numbins'] = intarray32[8] #total number of bins per channel
-            
-                headerdat['bintime'] = floatarray[2]  #bin width in seconds
-                
-                headerdat['rangecal'] = floatarray[3] #range offset in meters, default is 0
-            
-                headerdat['databins'] = intarray16[9]  #number of bins not including those used for background
-                headerdat['scanflag'] = intarray16[10]  #0: no scanner, 1: scanner
-                headerdat['backbins'] = intarray16[11]  #number of background bins
-            
-                headerdat['az'] = floatarray[4]  #scanner azimuth angle
-                headerdat['el'] = floatarray[5]  #scanner elevation angle
-                headerdat['deg'] = floatarray[6] #compass degrees (currently unused)
-                headerdat['pvolt0'] = floatarray[7] #currently unused
-                headerdat['pvolt1'] = floatarray[8] #currently unused
-                headerdat['gpslat'] = floatarray[9] #GPS latitude in decimal degreees (-999.0 if no GPS)
-                headerdat['gpslon'] = floatarray[10]#GPS longitude in decimal degrees (-999.0 if no GPS)
-                headerdat['cloudbase'] = floatarray[11] #cloud base height in [m]
-            
-                headerdat['baddat'] = byte_array[0]  #0: good data, 1: bad data
-                headerdat['version'] = byte_array[1] #version of file format.  current version is 1
-            
-                headerdat['bg_avg2'] = floatarray[12] #mean background signal for channel 2
-                headerdat['bg_std2'] = floatarray[13] #mean background standard deviation for channel 2
-            
-                headerdat['mcs'] = byte_array[2]  #MCS mode register  Bit#7: 0-normal, 1-polarization
-                                             #Bit#6-5: polarization toggling: 00-linear polarizer control
-                                             #01-toggling pol control, 10-toggling pol control 11-circular pol control
-            
-                headerdat['firstbin'] = intarray16[12]  #bin # of first return data
-                headerdat['systype'] = byte_array[3]   #0: standard MPL, 1: mini MPL
-                headerdat['syncrate'] = intarray16[13]  #mini-MPL only, sync pulses seen per second
-                headerdat['firstback'] = intarray16[14] #mini-MPL only, first bin used for background calcs
-                headerdat['headersize2'] = intarray16[15] #size of additional header data (currently unused)
-                
-                if headerdat['headersize2'] > 128:
-                    byte_array.fromfile(binfile, 1)
-                    floatarray.fromfile(binfile, 6)
-                    intarray16.fromfile(binfile, 1)
-                    floatarray.fromfile(binfile, 2)
-                
-                    headerdat['Weatherstat'] = byte_array[4]   #0:weatehr station not used, 1:weather station used
-                    headerdat['Int_temp'] = floatarray[14]  #Temperature inside in deg. Celsius
-                    headerdat['Ext_temp'] = floatarray[15]  #Temp. outside
-                    headerdat['Int_humid'] = floatarray[16] #Humidity inside in %
-                    headerdat['Ext_humid'] = floatarray[17] #Hum. outside
-                    headerdat['Dewpoint'] = floatarray[18]  #dewpoint in deg. Celsius
-                    headerdat['Wnd_spd'] = floatarray[19]  #wind speed in km/h
-                    headerdat['Wnd_dir'] = intarray16[16]  #wind direction in deg.
-                    headerdat['Press'] = floatarray[20]  #Barometric pressure in hPa
-                    headerdat['Rain'] = floatarray[21]  #Rain rate in mm/hr
-                
-                
-                numbins = headerdat['numbins']
-                numchans = headerdat['numchans'] 
-                altstep = headerdat['bintime']*const.c #altitude step in meters
-                maxalt = numbins*altstep
-                minalt = headerdat['rangecal']
-                altrange = np.arange(minalt,maxalt,altstep,dtype='float')
-                
-                if numchans == 2:
-                    copolvals.fromfile(binfile, numbins) 
-                    temp = np.array(copolvals)
-                    profdat_crosspol[dt] = pan.Series(temp, index = altrange)
-                    crosspolvals.fromfile(binfile, numbins) 
-                    temp = np.array(crosspolvals)
-                    profdat_copol[dt] = pan.Series(temp, index = altrange)
-                else:
-                    raise ValueError('Wrong number of channels')
-                
-                headerdat['profnum'] = profnum
-                profnum += 1
-                header[dt] = pan.Series(headerdat)
-            except EOFError:
-                break
-        
-        df_copol = pan.DataFrame.from_dict(profdat_copol, orient='index')
-        df_copol.columns=altrange
-        df_crosspol = pan.DataFrame.from_dict(profdat_crosspol, orient='index')
-        df_crosspol.columns=altrange
-        df_header = pan.DataFrame.from_dict(header, orient='index')
-        
-    store = pan.HDFStore(h5filename)
-    store['copol_raw'] = df_copol
-    store['crosspol_raw'] = df_crosspol
-    store['header'] = df_header
-    store.close()
-       
+import h5py 
 
 class MPL:
     """
@@ -267,6 +45,9 @@ class MPL:
         self.depolrat = []  #slot fo depol ratio array
         self.header = []  #slot for header data
         self.SNR = []
+        self.backscatter = [] #slot for corrected backscatter array
+        self.extinction = []  #slot for extinction array
+        self.scenepanel = []  #slot for panel containing scene analysis features
         
 
     def copy(self):
@@ -309,7 +90,24 @@ class MPL:
                 self.depolrat = MPLnew.depolrat
             else:
                 self.depolrat[0] = self.depolrat[0].append(MPLnew.depolrat[0])
-                    
+        
+        if MPLnew.backscatter:
+            if not self.backscatter:
+                self.backscatter = MPLnew.backscatter
+            else:
+                self.backscatter[0] = self.backscatter[0].append(MPLnew.backscatter[0])
+        
+        if MPLnew.extinction:
+            if not self.extinction:
+                self.extinction = MPLnew.extinction
+            else:
+                self.extinction[0] = self.extinction[0].append(MPLnew.extinction[0])
+        
+        if MPLnew.scenepanel:
+            if not self.scenepanel:
+                self.scenepanel = MPLnew.scenepanel
+            else:
+                self.scenepanel[0] = self.scenepanel[0].append(MPLnew.scenepanel[0])
         return self
     
     def fromMPL(self, filename):
@@ -493,17 +291,42 @@ class MPL:
         except KeyError:
             if verbose:
                 print "Warning: No Depol Ratio file"
+        
+        try:
+            self.backscatter=pan.read_hdf(filename,'Backscatter')
+        except KeyError:
+            if verbose:
+                print "Warning: No Backscatter file"
+        
+        try:
+            self.extinction=pan.read_hdf(filename,'Extinction')
+        except KeyError:
+            if verbose:
+                print "Warning: No Extinction file"
+        
+        try:
+            self.scnepanel=pan.read_hdf(filename,'Scenepanel')
+        except KeyError:
+            if verbose:
+                print "Warning: No Scene Analysis file"
         SNRdict={}
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_data')
-            tempSNR_depol=pan.read_hdf(filename,'SNR_depol_data')
+            tempSNR_depol=pan.read_hdf(filename,'SNR_crosspol_data')
+            SNRdict['data']=[tempSNR_copol,tempSNR_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-data file"
+        try:            
+            tempSNR_copol=pan.read_hdf(filename,'SNR_copol_rsq')
+            tempSNR_depol=pan.read_hdf(filename,'SNR_crosspol_rsq')
             SNRdict['data']=[tempSNR_copol,tempSNR_depol]
         except KeyError:
             if verbose:
                 print "Warning: No SNR-data file"
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_NRB')
-            tempSNR_depol=pan.read_hdf(filename,'SNR_depol_NRB')
+            tempSNR_depol=pan.read_hdf(filename,'SNR_crosspol_NRB')
             SNRdict['NRB']=[tempSNR_copol,tempSNR_depol]
         except KeyError:
             if verbose:
@@ -514,123 +337,23 @@ class MPL:
         except KeyError:
             if verbose:
                 print "Warning: No SNR-depolrat file"
-        
+        try:            
+            tempSNR=pan.read_hdf(filename,'SNR_backscatter')
+            SNRdict['backscatter']=[tempSNR]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-backscatter file"
+        try:            
+            tempSNR=pan.read_hdf(filename,'SNR_extinction')
+            SNRdict['extinction']=[tempSNR]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-extinction file"
+                
         if SNRdict:
             self.SNR=SNRdict
             
         return self
-    
-#    def save_to_MPL(self,filename):
-#        #currently not working!
-#        import numpy as np
-#        import array
-#        
-#        with open(filename, 'wb') as MPLout:
-#        
-#            intarray16 = array.array('H')
-#            intarray32 = array.array('L')
-#            floatarray = array.array('f')
-#            byte_array = array.array('B')
-#            datavals = array.array('f')
-#                       
-#            intarray16.append(self.header.unitnum)
-#            intarray16.append(self.header.version)
-#            d = self.header.datetime
-#            
-#            intarray16.append(d.year)
-#            intarray16.append(d.month)
-#            intarray16.append(d.day)
-#            intarray16.append(d.hour)
-#            intarray16.append(d.minute)
-#            intarray16.append(d.second)
-#    
-#            intarray32.append(self.header.shotsum) #total number of shots collected per profile
-#            intarray32.append(self.header.trigfreq) #laser trigger frequency (usually 2500 Hz)
-#            intarray32.append(int(self.header.energy*1000))  #mean of laser energy monitor in uJ                      
-#            intarray32.append(int(self.header.energy*1000))  #mean of A/D#0 readings*100
-#            intarray32.append(int(self.header.temp_1*1000)) #mean of A/D#1 readings*100
-#            intarray32.append(int(self.header.temp_2*1000))  #mean of A/D#2 readings*100
-#            intarray32.append(int(self.header.temp_3*1000))  #mean of A/D#3 readings*100
-#            intarray32.append(int(self.header.temp_4*1000))  #mean of A/D#4 readings*100
-#            
-#            floatarray.append(self.header.bg_avg1) #mean background signal value for channel 1
-#            floatarray.append(self.header.bg_std1) #standard deviation of backgruond signal for channel 1
-#    
-#            intarray16.append(self.header.numchans) #number of channels
-#            intarray32.append(self.header.numbins) #total number of bins per channel
-#    
-#            floatarray.append(self.header.bintime)  #bin width in seconds
-#            
-#            floatarray.append(self.header.rangecal) #range offset in meters, default is 0
-#    
-#            intarray16.append(self.header.databins) #number of bins not including those used for background
-#            intarray16.append(self.header.scanflag)  #0: no scanner, 1: scanner
-#            intarray16.append(self.header.backbins) #number of background bins
-#    
-#            floatarray.append(self.header.az)  #scanner azimuth angle
-#            floatarray.append(self.header.el) #scanner elevation angle
-#            floatarray.append(self.header.deg) #compass degrees (currently unused)
-#            floatarray.append(self.header.pvolt0) #currently unused
-#            floatarray.append(self.header.pvolt1) #currently unused
-#            floatarray.append(self.header.gpslat) #GPS latitude in decimal degreees (-999.0 if no GPS)
-#            floatarray.append(self.header.gpslon) #GPS longitude in decimal degrees (-999.0 if no GPS)
-#            floatarray.append(self.header.cloudbase) #cloud base height in [m]
-#    
-#            byte_array.append(self.header.baddat)  #0: good data, 1: bad data
-#            byte_array.append(self.header.version) #version of file format.  current version is 1
-#    
-#            floatarray.append(self.header.bg_avg2) #mean background signal for channel 2
-#            floatarray.append(self.header.bg_std2) #mean background standard deviation for channel 2
-#    
-#            byte_array.append(self.header.mcs) #MCS mode register  Bit#7: 0-normal, 1-polarization
-#                                         #Bit#6-5: polarization toggling: 00-linear polarizer control
-#                                         #01-toggling pol control, 10-toggling pol control 11-circular pol control
-#    
-#            intarray16.append(self.header.firstbin)  #bin # of first return data
-#            byte_array.append(self.header.systype)  #0: standard MPL, 1: mini MPL
-#            intarray16.append(self.header.syncrate)  #mini-MPL only, sync pulses seen per second
-#            intarray16.append(self.header.firstback) #mini-MPL only, first bin used for background calcs
-#            intarray16.append(self.header.headersize2) #size of additional header data (currently unused)
-#                     
-#            copoldat = self.data[0].values
-#            crosspoldat = self.data[1].values
-#            
-#            profile_buffer = np.zeros(32,dtype='float')
-#            
-#            for n in range(np.shape(copoldat)[0]):
-#                datavals.fromlist(crosspoldat[n].tolist())
-#                datavals.fromlist(copoldat[n].tolist())
-#                datavals.fromlist(profile_buffer.tolist())
-#        
-#            temparray = intarray16[:8]                                    
-#            temparray.tofile(MPLout)
-#            temparray = intarray32[:8]                 
-#            temparray.tofile(MPLout)
-#            temparray = floatarray[:2]             
-#            temparray.tofile(MPLout)
-#            temparray = array.array('H',[intarray16[8]])             
-#            temparray.tofile(MPLout)
-#            temparray = array.array('L',[intarray32[8]])             
-#            temparray.tofile(MPLout)
-#            temparray = floatarray[2:4]            
-#            temparray.tofile(MPLout)
-#            temparray = intarray16[9:12]             
-#            temparray.tofile(MPLout)
-#            temparray = floatarray[4:12]
-#            temparray.tofile(MPLout)
-#            temparray = byte_array[:2]            
-#            temparray.tofile(MPLout)
-#            temparray = floatarray[12:14]            
-#            temparray.tofile(MPLout)        
-#            temparray = array.array('B',[byte_array[2]])             
-#            temparray.tofile(MPLout)
-#            temparray = array.array('H',[intarray16[12]])             
-#            temparray.tofile(MPLout)
-#            temparray = array.array('B',[byte_array[3]])             
-#            temparray.tofile(MPLout)
-#            temparray = intarray16[13:]             
-#            temparray.tofile(MPLout)
-#            datavals.tofile(MPLout)
         
     def save_to_HDF(self, filename, appendflag = 'false'):
         
@@ -659,6 +382,18 @@ class MPL:
         if self.depolrat:
             df_depolrat = self.depolrat[0]
             store['depolrat'] = df_depolrat
+        
+        if self.backscatter:
+            df_backscatter = self.backscatter[0]
+            store['Backscatter'] = df_backscatter
+        
+        if self.extinction:
+            df_extinction = self.extinction[0]
+            store['Extinction'] = df_extinction
+        
+        if self.scenepanel:
+            scenepanel = self.scenepanel[0]
+            store['Scenepanel'] = scenepanel
         
         if self.SNR:
             for k,v in self.SNR.iteritems():
@@ -759,157 +494,84 @@ class MPL:
                         tempsubgrp.create_dataset('values',data=df.values)
 
     
-    def alt_resample(self,altrange,underfill=True,verbose=False):
+    def alt_resample(self,altrange,verbose=False):
         #takes a pandas dataframe generated by mplreader and resamples on regular
         #intervals in altitude and resets the limits of the set
         #note: limits of altrange must be within original limits of altitude data
         
-        dataout = []
-        rsqout = []
-        nrbout = []
-        depolout=[]
         
         if verbose:
             print 'Altitude step resampling in progress ...'
-        for n in range(self.header['numchans'][0]):            
-            df = self.data[n]
-            x = df.columns
-            
-            minalt = df.columns[0]
-            maxalt = df.columns[-1]
-            
-            if minalt > altrange[0]:
-                altrange = altrange[altrange >= minalt]
-                if verbose:
-                    print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
-            
-            if maxalt < altrange[-1]:
-                altrange = altrange[altrange <= maxalt]
-                if verbose:
-                    print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
-                    
-            numrows = np.size(df.index)
-            numcols = np.size(altrange)
         
-            newvalues = np.empty([numrows, numcols])
-            r = 0
+        #resample raw MPL data
+        templist=[]
+        for dftemp in self.data:            
+            templist.append(resample_cols(dftemp,altrange,verbose))
+        self.data=templist
         
-            for row in df.iterrows():
-                f = interp1d(x,row[1].values)
-                newvalues[r,:] = f(altrange)
-                r += 1
-            dataout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
-        
-        self.data = dataout
-        
-        if self.rsq:     
-            for n in range(self.header['numchans'][0]): 
-                df = self.rsq[n]
-                x = df.columns
-                
-                minalt = df.columns[0]
-                maxalt = df.columns[-1]
-                
-                if minalt > altrange[0]:
-                    altrange = altrange[altrange >= minalt]
-                    if verbose:
-                        print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
-                
-                if maxalt < altrange[-1]:
-                    altrange = altrange[altrange <= maxalt]
-                    if verbose:
-                        print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
-                        
-                numrows = np.size(df.index)
-                numcols = np.size(altrange)
-            
-                newvalues = np.empty([numrows, numcols])
-                r = 0
-            
-                for row in df.iterrows():
-                    f = interp1d(x,row[1].values)
-                    newvalues[r,:] = f(altrange)
-                    r += 1
-                rsqout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
-            
-            self.rsq=rsqout
+        #resample range corrected data
+        if self.rsq:
+            templist=[]
+            for dftemp in self.rsq:            
+                templist.append(resample_cols(dftemp,altrange,verbose))
+            self.rsq=templist
         else:
             if verbose:
                 print "No Range-Squared Profiles"
         
-        if self.NRB:       
-            for n in range(self.header['numchans'][0]): 
-                df = self.NRB[n]
-                x = df.columns
-                
-                minalt = df.columns[0]
-                maxalt = df.columns[-1]
-                
-                if minalt > altrange[0]:
-                    altrange = altrange[altrange >= minalt]
-                    if verbose:
-                        print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
-                
-                if maxalt < altrange[-1]:
-                    altrange = altrange[altrange <= maxalt]
-                    if verbose:
-                        print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
-                        
-                numrows = np.size(df.index)
-                numcols = np.size(altrange)
-            
-                newvalues = np.empty([numrows, numcols])
-                r = 0
-            
-                for row in df.iterrows():
-                    f = interp1d(x,row[1].values)
-                    newvalues[r,:] = f(altrange)
-                    r += 1
-                nrbout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
-            
-            self.NRB=nrbout
+        #resample NRB data
+        if self.NRB:
+            templist=[]
+            for dftemp in self.NRB:            
+                templist.append(resample_cols(dftemp,altrange,verbose))
+            self.NRB=templist
         else:
             if verbose:
-                print "No NRB Profiles"    
-
+                print "No NRB Profiles"
+        
         if self.depolrat:       
-            df = self.depolrat[0]
-            x = df.columns
-            
-            minalt = df.columns[0]
-            maxalt = df.columns[-1]
-            
-            if minalt > altrange[0]:
-                altrange = altrange[altrange >= minalt]
-                if verbose:
-                    print "WARNING: Minimum altitude reset to {0}".format(altrange[0])
-            
-            if maxalt < altrange[-1]:
-                altrange = altrange[altrange <= maxalt]
-                if verbose:
-                    print "WARNING: Maximum altitude reset to {0}".format(altrange[-1])
-                    
-            numrows = np.size(df.index)
-            numcols = np.size(altrange)
-        
-            newvalues = np.empty([numrows, numcols])
-            r = 0
-        
-            for row in df.iterrows():
-                f = interp1d(x,row[1].values)
-                newvalues[r,:] = f(altrange)
-                r += 1
-            depolout.append(pan.DataFrame(data = newvalues, index = df.index, columns = altrange))
-            
-            self.depolrat=depolout
+            templist=[]
+            for dftemp in self.depolrat:            
+                templist.append(resample_cols(dftemp,altrange,verbose))
+            self.depolrat=templist
         else:
             if verbose:
-                print "No Depol Ratio Profiles"  
+                print "No Depol Ratio Profiles" 
+
+        if self.backscatter:       
+            templist=[]
+            for dftemp in self.backscatter:            
+                templist.append(resample_cols(dftemp,altrange,verbose))
+            self.backscatter=templist
+        else:
+            if verbose:
+                print "No Backscatter Profiles"
+
+        if self.extinction:       
+            templist=[]
+            for dftemp in self.extinction:            
+                templist.append(resample_cols(dftemp,altrange,verbose))
+            self.extinction=templist
+        else:
+            if verbose:
+                print "No Extinction Profiles"
+
+        if self.scenepanel:
+            templist=[]
+            for p in self.scenepanel:
+                paneltemp=pan.Panel()
+                for i in p.items:
+                    dftemp = p.loc[i]
+                    paneltemp.loc[i]=resample_cols(dftemp,altrange,verbose)                
+                templist.append(paneltemp)
+            self.scenepanel=tmeplist
+        else:
+            if verbose:
+                print "No Scene Analysis"
                 
         if verbose:
             print '... Done!'
-            
-        
+                    
         self.header['numbins'] = [len(altrange) for db in self.header['numbins']]
         self.header['databins'] = [db - bb for (db,bb) in zip(self.header['numbins'],self.header['backbins'])]
         self.header['bintime'] = [(altrange[1]-altrange[0])/const.c for bt in self.header['bintime']]
@@ -954,38 +616,93 @@ class MPL:
             self.header = pan.DataFrame(temphead)
         if verbose:
                 print 'Time step regularization in progress ...'
-                
-        for n in range(self.header['numchans'][0]):    
-            
+        
+        templist=[]        
+        for dftemp in self.data:                
             if starttime:
-                self.data[n] = self.data[n].loc[self.data[n].index>=starttime]                
-                if self.rsq:
-                    self.rsq[n] = self.rsq[n].loc[self.rsq[n].index>=starttime]
-                if self.NRB:
-                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index>=starttime]  
-                                     
+                dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
             if endtime:
-                self.data[n] = self.data[n].loc[self.data[n].index<=endtime]
-                if self.rsq:
-                    self.rsq[n] = self.rsq[n].loc[self.rsq[n].index<=endtime]
-                if self.NRB:
-                    self.NRB[n] = self.NRB[n].loc[self.NRB[n].index<=endtime]   
-
+                dftemp = dftemp.loc[dftemp.index<=endtime]  
             if timestep:
-                self.data[n] = self.data[n].resample(timestep, how = datamethod)
-                if self.rsq:
-                    self.rsq[n] = self.rsq[n].resample(timestep, how = datamethod)
-                if self.NRB:
-                    self.NRB[n] = self.NRB[n].resample(timestep, how = datamethod)
+                dftemp = dftemp.resample(timestep, how = datamethod)
+            tmeplist.append(dftemp)
+        self.data=templist
     
+        if self.rsq:
+            templist=[]        
+            for dftemp in self.rsq:                
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how = datamethod)
+                templist.append(dftemp)
+            self.rsq=templist
+
+        if self.NRB:
+            templist=[]        
+            for dftemp in self.NRB:                
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how = datamethod)
+                templist.append(dftemp)
+            self.NRB=templist
+
         if self.depolrat:
-            if starttime:
-                self.depolrat[0] = self.depolrat[0].loc[self.depolrat[0].index>=starttime]                                                    
-            if endtime:
-                self.depolrat[0] = self.depolrat[0].loc[self.depolrat[0].index<=endtime]      
-            if timestep:
-                self.depolrat[0] = self.depolrat[0].resample(timestep, how = datamethod)
+            templist=[]        
+            for dftemp in self.depolrat:                
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how = datamethod)
+                templist.append(dftemp)
+            self.depolrat=templist
             
+        if self.backscatter:
+            templist=[]        
+            for dftemp in self.backscatter:                
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how = datamethod)
+                templist.append(dftemp)
+            self.backscatter=templist
+        
+        if self.extinction:
+            templist=[]        
+            for dftemp in self.extinction:                
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how = datamethod)
+                templist.append(dftemp)
+            self.extinction=templist
+        
+        if self.scenepanel:
+            templist=[]
+            for p in self.scenepanel:
+                paneltemp=pan.Panel()
+                for i in p.items:
+                    dftemp=p.loc[i]
+                    if starttime:
+                        dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                    if endtime:
+                        dftemp = dftemp.loc[dftemp.index<=endtime]  
+                    if timestep:
+                        dftemp = dftemp.resample(timestep, how = datamethod)
+                    paneltemp.loc[i]=dftemp
+                templist.append(paneltemp)
+            self.scenepanel=templist
         if verbose:
             print '... Done!'
                 
@@ -1304,6 +1021,16 @@ class MPL:
                     datasets.append(('depolrat',self.depolrat))
                 elif verbose:
                     print "No depolrat available for SNR calc"
+            if d=='backscatter' or d=='all':
+                if self.backscatter:
+                    datasets.append(('backscatter',self.backscatter))
+                elif verbose:
+                    print "No Backscatter available for SNR calc"
+            if d=='extinction' or d=='all':
+                if self.extinction:
+                    datasets.append(('extinction',self.extinction))
+                elif verbose:
+                    print "No extinction available for SNR calc"
         
         for dset_name,dset in datasets: 
             SNRdict[dset_name] = []
@@ -1352,9 +1079,364 @@ class MPL:
             self.calculate_SNR()
         
         return self
+   
+        
+def set_dir(titlestring):
+     
+    # Make a top-level instance and hide since it is ugly and big.
+    root = Tk()
+    root.withdraw()
     
-           
-      
+    # Make it almost invisible - no decorations, 0 size, top left corner.
+    root.overrideredirect(True)
+    root.geometry('0x0+0+0')
+#    
+    # Show window again and lift it to top so it can get focus,
+    # otherwise dialogs will end up behind the terminal.
+    root.deiconify()
+    root.attributes("-topmost",1)
+    root.focus_force()
+    
+    file_path = tkFileDialog.askdirectory(parent=root,title=titlestring)
+     
+    if file_path != "":
+       return str(file_path)
+     
+    else:
+       print "you didn't open anything!"
+    
+    # Get rid of the top-level instance once to make it actually invisible.
+    root.destroy() 
+          
+def get_files(titlestring,filetype = ('.txt','*.txt')):
+     
+    # Make a top-level instance and hide since it is ugly and big.
+    root = Tk()
+    root.withdraw()
+    
+    # Make it almost invisible - no decorations, 0 size, top left corner.
+    root.overrideredirect(True)
+    root.geometry('0x0+0+0')
+#    
+    # Show window again and lift it to top so it can get focus,
+    # otherwise dialogs will end up behind the terminal.
+    root.deiconify()
+    root.attributes("-topmost",1)
+    root.focus_force()
+
+    filenames = []
+     
+    filenames = tkFileDialog.askopenfilename(title=titlestring, filetypes=[filetype],multiple='True')
+    
+    #do nothing if already a python list
+    if filenames == "": 
+        print "You didn't open anything!"  
+        return
+        
+    if isinstance(filenames,list): return filenames
+
+    #http://docs.python.org/library/re.html
+    #the re should match: {text and white space in brackets} AND anynonwhitespacetokens
+    #*? is a non-greedy match for any character sequence
+    #\S is non white space
+
+    #split filenames string up into a proper python list
+    result = re.findall("{.*?}|\S+",filenames)
+
+    #remove any {} characters from the start and end of the file names
+    result = [ re.sub("^{|}$","",i) for i in result ]     
+    
+    root.destroy()
+    return result
+
+def resample_cols(dfin,newcols,verbaose=False):
+        oldcols=dfin.columns
+        
+        mincol=oldcols[0]
+        maxcol=oldcols[-1]
+        
+        if mincol>newcols[0]:
+            newcols=newcols[newcols>=mincol]
+            if verbose:
+                print "WARNING: Minimum column value reset to {0}".format(newcols[0])
+            
+        if maxcol<newcols[-1]:
+            newcols=newcols[newcols<=maxcol]
+            if verbose:
+                print "WARNING: Maximum column value reset to {0}".format(newcols[-1])
+                
+        numrows=len(dfin.index)
+        numcols=len(newcols)    
+        newvalues=np.empty([numrows,numcols])
+        r=0    
+        for row in df.iterrows():
+            f=interp1d(oldcols,row[1].values)
+            newvalues[r,:]=f(newcols)
+            r+=1
+        defout=pan.DataFrame(data=newvalues,index=dfin.index,columns=newcols)
+    
+    return dfout
+        
+    
+def MPLtoHDF(filename, appendflag = 'False'):
+    
+    h5filename = filename.split('.')[0]+'_proc.h5'
+
+    with open(filename,'rb') as binfile:
+    
+        profdat_copol = OrderedDict()
+        profdat_crosspol = OrderedDict()
+        header = OrderedDict()
+        headerdat = OrderedDict()
+        
+        profnum = 0
+        
+        while True:
+            try:
+                intarray16 = array.array('H')
+                intarray32 = array.array('I') # L is 8 byte on Xenon
+                floatarray = array.array('f')
+                byte_array = array.array('B')
+                copolvals = array.array('f')  
+                crosspolvals = array.array('f')  
+                
+                intarray16.fromfile(binfile, 8)
+                intarray32.fromfile(binfile, 8)
+                floatarray.fromfile(binfile, 2)
+                intarray16.fromfile(binfile, 1)
+                intarray32.fromfile(binfile, 1)
+                floatarray.fromfile(binfile, 2)
+                intarray16.fromfile(binfile, 3)
+                floatarray.fromfile(binfile, 8)
+                byte_array.fromfile(binfile, 2)
+                floatarray.fromfile(binfile, 2)
+                byte_array.fromfile(binfile, 1)
+                intarray16.fromfile(binfile, 1)
+                byte_array.fromfile(binfile, 1)
+                intarray16.fromfile(binfile, 3)
+                
+                headerdat['unitnum'] = intarray16[0]
+                headerdat['version'] = intarray16[1]
+                year = intarray16[2]
+                month = intarray16[3]
+                day = intarray16[4]
+                hour = intarray16[5]
+                minute = intarray16[6]
+                second = intarray16[7]
+                dt = datetime.datetime(year,month,day,hour,minute,second)
+            
+                headerdat['shotsum'] = intarray32[0]  #total number of shots collected per profile
+                headerdat['trigfreq'] = intarray32[1] #laser trigger frequency (usually 2500 Hz)
+                headerdat['energy'] = intarray32[2]/1000.0  #mean of laser energy monitor in uJ
+                headerdat['temp_0'] = intarray32[3]/1000.0  #mean of A/D#0 readings*100
+                headerdat['temp_1'] = intarray32[4]/1000.0  #mean of A/D#1 readings*100
+                headerdat['temp_2'] = intarray32[5]/1000.0  #mean of A/D#2 readings*100
+                headerdat['temp_3'] = intarray32[6]/1000.0  #mean of A/D#3 readings*100
+                headerdat['temp_4'] = intarray32[7]/1000.0  #mean of A/D#4 readings*100
+                
+                headerdat['bg_avg1'] = floatarray[0] #mean background signal value for channel 1
+                headerdat['bg_std1'] = floatarray[1] #standard deviation of backgruond signal for channel 1
+            
+                headerdat['numchans'] = intarray16[8] #number of channels
+                headerdat['numbins'] = intarray32[8] #total number of bins per channel
+            
+                headerdat['bintime'] = floatarray[2]  #bin width in seconds
+                
+                headerdat['rangecal'] = floatarray[3] #range offset in meters, default is 0
+            
+                headerdat['databins'] = intarray16[9]  #number of bins not including those used for background
+                headerdat['scanflag'] = intarray16[10]  #0: no scanner, 1: scanner
+                headerdat['backbins'] = intarray16[11]  #number of background bins
+            
+                headerdat['az'] = floatarray[4]  #scanner azimuth angle
+                headerdat['el'] = floatarray[5]  #scanner elevation angle
+                headerdat['deg'] = floatarray[6] #compass degrees (currently unused)
+                headerdat['pvolt0'] = floatarray[7] #currently unused
+                headerdat['pvolt1'] = floatarray[8] #currently unused
+                headerdat['gpslat'] = floatarray[9] #GPS latitude in decimal degreees (-999.0 if no GPS)
+                headerdat['gpslon'] = floatarray[10]#GPS longitude in decimal degrees (-999.0 if no GPS)
+                headerdat['cloudbase'] = floatarray[11] #cloud base height in [m]
+            
+                headerdat['baddat'] = byte_array[0]  #0: good data, 1: bad data
+                headerdat['version'] = byte_array[1] #version of file format.  current version is 1
+            
+                headerdat['bg_avg2'] = floatarray[12] #mean background signal for channel 2
+                headerdat['bg_std2'] = floatarray[13] #mean background standard deviation for channel 2
+            
+                headerdat['mcs'] = byte_array[2]  #MCS mode register  Bit#7: 0-normal, 1-polarization
+                                             #Bit#6-5: polarization toggling: 00-linear polarizer control
+                                             #01-toggling pol control, 10-toggling pol control 11-circular pol control
+            
+                headerdat['firstbin'] = intarray16[12]  #bin # of first return data
+                headerdat['systype'] = byte_array[3]   #0: standard MPL, 1: mini MPL
+                headerdat['syncrate'] = intarray16[13]  #mini-MPL only, sync pulses seen per second
+                headerdat['firstback'] = intarray16[14] #mini-MPL only, first bin used for background calcs
+                headerdat['headersize2'] = intarray16[15] #size of additional header data (currently unused)
+                
+                if headerdat['headersize2'] > 128:
+                    byte_array.fromfile(binfile, 1)
+                    floatarray.fromfile(binfile, 6)
+                    intarray16.fromfile(binfile, 1)
+                    floatarray.fromfile(binfile, 2)
+                
+                    headerdat['Weatherstat'] = byte_array[4]   #0:weatehr station not used, 1:weather station used
+                    headerdat['Int_temp'] = floatarray[14]  #Temperature inside in deg. Celsius
+                    headerdat['Ext_temp'] = floatarray[15]  #Temp. outside
+                    headerdat['Int_humid'] = floatarray[16] #Humidity inside in %
+                    headerdat['Ext_humid'] = floatarray[17] #Hum. outside
+                    headerdat['Dewpoint'] = floatarray[18]  #dewpoint in deg. Celsius
+                    headerdat['Wnd_spd'] = floatarray[19]  #wind speed in km/h
+                    headerdat['Wnd_dir'] = intarray16[16]  #wind direction in deg.
+                    headerdat['Press'] = floatarray[20]  #Barometric pressure in hPa
+                    headerdat['Rain'] = floatarray[21]  #Rain rate in mm/hr
+                
+                
+                numbins = headerdat['numbins']
+                numchans = headerdat['numchans'] 
+                altstep = headerdat['bintime']*const.c #altitude step in meters
+                maxalt = numbins*altstep
+                minalt = headerdat['rangecal']
+                altrange = np.arange(minalt,maxalt,altstep,dtype='float')
+                
+                if numchans == 2:
+                    copolvals.fromfile(binfile, numbins) 
+                    temp = np.array(copolvals)
+                    profdat_crosspol[dt] = pan.Series(temp, index = altrange)
+                    crosspolvals.fromfile(binfile, numbins) 
+                    temp = np.array(crosspolvals)
+                    profdat_copol[dt] = pan.Series(temp, index = altrange)
+                else:
+                    raise ValueError('Wrong number of channels')
+                
+                headerdat['profnum'] = profnum
+                profnum += 1
+                header[dt] = pan.Series(headerdat)
+            except EOFError:
+                break
+        
+        df_copol = pan.DataFrame.from_dict(profdat_copol, orient='index')
+        df_copol.columns=altrange
+        df_crosspol = pan.DataFrame.from_dict(profdat_crosspol, orient='index')
+        df_crosspol.columns=altrange
+        df_header = pan.DataFrame.from_dict(header, orient='index')
+        
+    store = pan.HDFStore(h5filename)
+    store['copol_raw'] = df_copol
+    store['crosspol_raw'] = df_crosspol
+    store['header'] = df_header
+    store.close()
+
+#    def save_to_MPL(self,filename):
+#        #currently not working!
+#        import numpy as np
+#        import array
+#        
+#        with open(filename, 'wb') as MPLout:
+#        
+#            intarray16 = array.array('H')
+#            intarray32 = array.array('L')
+#            floatarray = array.array('f')
+#            byte_array = array.array('B')
+#            datavals = array.array('f')
+#                       
+#            intarray16.append(self.header.unitnum)
+#            intarray16.append(self.header.version)
+#            d = self.header.datetime
+#            
+#            intarray16.append(d.year)
+#            intarray16.append(d.month)
+#            intarray16.append(d.day)
+#            intarray16.append(d.hour)
+#            intarray16.append(d.minute)
+#            intarray16.append(d.second)
+#    
+#            intarray32.append(self.header.shotsum) #total number of shots collected per profile
+#            intarray32.append(self.header.trigfreq) #laser trigger frequency (usually 2500 Hz)
+#            intarray32.append(int(self.header.energy*1000))  #mean of laser energy monitor in uJ                      
+#            intarray32.append(int(self.header.energy*1000))  #mean of A/D#0 readings*100
+#            intarray32.append(int(self.header.temp_1*1000)) #mean of A/D#1 readings*100
+#            intarray32.append(int(self.header.temp_2*1000))  #mean of A/D#2 readings*100
+#            intarray32.append(int(self.header.temp_3*1000))  #mean of A/D#3 readings*100
+#            intarray32.append(int(self.header.temp_4*1000))  #mean of A/D#4 readings*100
+#            
+#            floatarray.append(self.header.bg_avg1) #mean background signal value for channel 1
+#            floatarray.append(self.header.bg_std1) #standard deviation of backgruond signal for channel 1
+#    
+#            intarray16.append(self.header.numchans) #number of channels
+#            intarray32.append(self.header.numbins) #total number of bins per channel
+#    
+#            floatarray.append(self.header.bintime)  #bin width in seconds
+#            
+#            floatarray.append(self.header.rangecal) #range offset in meters, default is 0
+#    
+#            intarray16.append(self.header.databins) #number of bins not including those used for background
+#            intarray16.append(self.header.scanflag)  #0: no scanner, 1: scanner
+#            intarray16.append(self.header.backbins) #number of background bins
+#    
+#            floatarray.append(self.header.az)  #scanner azimuth angle
+#            floatarray.append(self.header.el) #scanner elevation angle
+#            floatarray.append(self.header.deg) #compass degrees (currently unused)
+#            floatarray.append(self.header.pvolt0) #currently unused
+#            floatarray.append(self.header.pvolt1) #currently unused
+#            floatarray.append(self.header.gpslat) #GPS latitude in decimal degreees (-999.0 if no GPS)
+#            floatarray.append(self.header.gpslon) #GPS longitude in decimal degrees (-999.0 if no GPS)
+#            floatarray.append(self.header.cloudbase) #cloud base height in [m]
+#    
+#            byte_array.append(self.header.baddat)  #0: good data, 1: bad data
+#            byte_array.append(self.header.version) #version of file format.  current version is 1
+#    
+#            floatarray.append(self.header.bg_avg2) #mean background signal for channel 2
+#            floatarray.append(self.header.bg_std2) #mean background standard deviation for channel 2
+#    
+#            byte_array.append(self.header.mcs) #MCS mode register  Bit#7: 0-normal, 1-polarization
+#                                         #Bit#6-5: polarization toggling: 00-linear polarizer control
+#                                         #01-toggling pol control, 10-toggling pol control 11-circular pol control
+#    
+#            intarray16.append(self.header.firstbin)  #bin # of first return data
+#            byte_array.append(self.header.systype)  #0: standard MPL, 1: mini MPL
+#            intarray16.append(self.header.syncrate)  #mini-MPL only, sync pulses seen per second
+#            intarray16.append(self.header.firstback) #mini-MPL only, first bin used for background calcs
+#            intarray16.append(self.header.headersize2) #size of additional header data (currently unused)
+#                     
+#            copoldat = self.data[0].values
+#            crosspoldat = self.data[1].values
+#            
+#            profile_buffer = np.zeros(32,dtype='float')
+#            
+#            for n in range(np.shape(copoldat)[0]):
+#                datavals.fromlist(crosspoldat[n].tolist())
+#                datavals.fromlist(copoldat[n].tolist())
+#                datavals.fromlist(profile_buffer.tolist())
+#        
+#            temparray = intarray16[:8]                                    
+#            temparray.tofile(MPLout)
+#            temparray = intarray32[:8]                 
+#            temparray.tofile(MPLout)
+#            temparray = floatarray[:2]             
+#            temparray.tofile(MPLout)
+#            temparray = array.array('H',[intarray16[8]])             
+#            temparray.tofile(MPLout)
+#            temparray = array.array('L',[intarray32[8]])             
+#            temparray.tofile(MPLout)
+#            temparray = floatarray[2:4]            
+#            temparray.tofile(MPLout)
+#            temparray = intarray16[9:12]             
+#            temparray.tofile(MPLout)
+#            temparray = floatarray[4:12]
+#            temparray.tofile(MPLout)
+#            temparray = byte_array[:2]            
+#            temparray.tofile(MPLout)
+#            temparray = floatarray[12:14]            
+#            temparray.tofile(MPLout)        
+#            temparray = array.array('B',[byte_array[2]])             
+#            temparray.tofile(MPLout)
+#            temparray = array.array('H',[intarray16[12]])             
+#            temparray.tofile(MPLout)
+#            temparray = array.array('B',[byte_array[3]])             
+#            temparray.tofile(MPLout)
+#            temparray = intarray16[13:]             
+#            temparray.tofile(MPLout)
+#            datavals.tofile(MPLout)
 
 if __name__ == '__main__':
     

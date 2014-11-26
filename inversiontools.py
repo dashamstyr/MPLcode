@@ -59,7 +59,7 @@ def std_atm(z):
     return T,P,d
 
 
-def molecular(z,wave):
+def molecular(z,wave=532.0):
     """
     Function for generating molecular scattering and extinction coefficients based
     on an altitude and a laser wavelength.  Ozone absorption is ignored.
@@ -121,7 +121,7 @@ def molecular(z,wave):
 
     return T,P,d,beta,alpha
 
-def molprof(z,wave, T_0 = 1.0):
+def molprof(z,wave=532.0, T_0 = 1.0):
     """
     Function for generating a theoretical profile of normalized attenuated
     backscatter.  In other words, this provides
@@ -202,24 +202,25 @@ def addlayer(P_in, layer, lrat, inplace=True):
     z_max = max(z_in)
     
     z_old = z_min
+    T_total=1.0
     for z in P_out.columns:
         if z < z_min:
-            T_total = (P_out.loc['vals',z]/P_out.loc['vals'].iloc[0])* \
-            (P_out.loc['beta_t'].iloc[0]/P_out.loc['beta_t',z])* \
-            (z/P_out.columns[0])**2
+            T_step = np.exp(-2.0*P_out.loc['alpha_t',z]*(z-z_old))
+            T_total = T_total*T_step
+            z_old = z
         elif z <= z_max:
             P_out.loc['beta_p',z] += np.interp(z,z_in,beta_in)
             P_out.loc['alpha_p',z] += P_out.loc['beta_p',z]*lrat
             P_out.loc['beta_t',z] = P_out.loc['beta_p',z] + P_out.loc['beta_R',z]
             P_out.loc['alpha_t',z] = P_out.loc['alpha_p',z] + P_out.loc['alpha_R',z]
-            T_step = np.exp(-P_out.loc['alpha_t',z]*(z-z_old))
+            T_step = np.exp(-2.0*P_out.loc['alpha_t',z]*(z-z_old))
             T_total = T_total*T_step
-            P_out.loc['vals',z] = z**-2*P_out.loc['beta_t',z]*T_total**2
+            P_out.loc['vals',z] = z**-2*P_out.loc['beta_t',z]*T_total
             z_old = z
         else:
             T_step = np.exp(-P_out.loc['alpha_t',z]*(z-z_old))
             T_total = T_total*T_step
-            P_out.loc['vals',z] = z**-2*P_out.loc['beta_t',z]*T_total**2
+            P_out.loc['vals',z] = z**-2*P_out.loc['beta_t',z]*T_total
             z_old=z
 
     return P_out
@@ -328,7 +329,7 @@ def calc_slope(prof, winsize = 10):
     
     return slope_out
 
-def fernald(P_in, lrat, wave = 532, E = 1.0, calrange = []):
+def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = []):
     """
     Inputs:
         P_in: a pandas series depicting a 1-D profile of NRB from an MPL class object. 
@@ -443,7 +444,7 @@ def fernald(P_in, lrat, wave = 532, E = 1.0, calrange = []):
     return beta_total
 
 
-def klett(P_in,r_m,lrat,sigma_m,k=1):
+def klett(P_in,r_m,lrat_in,sigma_m,k=1):
     """
     Function that calculates backscatter and extinction coefficients based on
     variable lidar ratios using the Klett algorithm 
@@ -452,7 +453,7 @@ def klett(P_in,r_m,lrat,sigma_m,k=1):
     P_in = a pandas series with values of signal strength and altitude index
     r_m = the reference altitude - maximum altitude for which calculations are done
             and the point at which the extinction coefficeint is assumed ot be known
-    lrat = a Pandas series with values of lidar ratio and altitude index
+    lrat_in = a Pandas series with values of lidar ratio and altitude index
     sigma_m = the extinction coefficient at altitude r_m
     k = the power coefficient in the power law relationship bwetween backscatter
         and extinction (defaults to 1)
@@ -462,21 +463,24 @@ def klett(P_in,r_m,lrat,sigma_m,k=1):
     sigma = pandas series of extinction coefficients
     
     """
-
-    altitudes = P_in.index.values
     
-    sigma = pan.Series(index=altitudes)
-    beta = pan.Series(index=altitudes)
+    S=np.log(P_in)
+    lrat = 1.0/lrat_in  #Klett definition of lidar ratio is backscatter/extintion not the other way round
+
+    altitudes = S.index.values
+    
+    sigma = pan.Series(index=altitudes,dtype='float')
+    beta = pan.Series(index=altitudes,dtype='float')
     
     for alt in reversed(altitudes):
        if alt > r_m:
-           sigma.loc[alt] = 'na'
-           beta.loc[alt] = 'na'      
+           sigma.loc[alt] = np.nan
+           beta.loc[alt] = np.nan      
        else:
-           P_new = P_in.loc[:alt]
+           S_new = S.loc[:alt]
            break
     
-    newalts = P_new.index.values
+    newalts = S_new.index.values
     
     for alt in reversed(newalts):
         if alt == newalts[-1]:            
@@ -486,61 +490,147 @@ def klett(P_in,r_m,lrat,sigma_m,k=1):
         
         else:
             X1 = (lrat.loc[oldalt]/lrat.loc[alt])**(1/k)   
-            sigma.loc[alt] = X1*np.exp((P_new.loc[alt]-P_new.loc[oldalt])/k)/ \
-            (sigma.loc[oldalt]**-1+(1.0/k)*(1+X1*np.exp((P_new.loc[alt]-P_new.loc[oldalt])/k))*(oldalt-alt))
+            sigma.loc[alt] = X1*np.exp((S_new.loc[alt]-S_new.loc[oldalt])/k)/ \
+            (sigma.loc[oldalt]**-1+(1.0/k)*(1+X1*np.exp((S_new.loc[alt]-S_new.loc[oldalt])/k))*(oldalt-alt))
             
             beta.loc[alt] = lrat.loc[alt]*sigma.loc[alt]**k
             oldalt = alt
-    
-    
+        
     return beta, sigma  
+    
+def klett2(P_in,lrat_in,**kwargs):
+    """
+    Function that calculates backscatter and extinction coefficients based on
+    variable lidar ratios using the Klett algorithm 
+    
+    Inputs:
+    P_in = a pandas series with values of signal strength and altitude index
+    r_m = the reference altitude - maximum altitude for which calculations are done
+            and the point at which the extinction coefficeint is assumed ot be known
+    lrat_in = a Pandas series with values of lidar ratio and altitude index
+    sigma_m = the extinction coefficient at altitude r_m
+    k = the power coefficient in the power law relationship bwetween backscatter
+        and extinction (defaults to 1)
+        
+    Outputs:
+    beta = pandas series of backscatter coefficients
+    sigma = pandas series of extinction coefficients
+    
+    """
+    r_m=kwargs.get('r_m',[])
+    beta_m=kwargs.get('beta_m',[])
+    wave=kwargs.get('wave',532.0)
+    
+    lrat = 1.0/lrat_in  #Klett definition of lidar ratio is backscatter/extintion not the other way round
+    lrat_R=3.0/(8.0*np.pi)
+    altitudes = P_in.index.values
+    
+    if not r_m:
+        for a in altitudes[::-1]:
+            if not np.isnan(P_in.ix[a]):
+                r_m=a
+                break
+    beta = pan.Series(index=altitudes,dtype='float')
+    
+    for alt in reversed(altitudes):
+       if alt > r_m:
+           beta.loc[alt] = np.nan      
+       else:
+           P_new = P_in.loc[:alt]
+           break
+    
+    newalts = P_new.index.values
+    P_mol=molprof(z=newalts,wave=wave)
+    beta_R=P_mol.loc['beta_R']
+    if not beta_m:
+        beta_m=beta_R.iloc[-1]
+    S=np.log(P_new)
+    S.fillna(method='pad',inplace=True)
+    
+    beta_int1=0
+    beta_int2=0
+    S_int=0
+    for alt in reversed(newalts):
+        if alt == newalts[-1]: 
+            beta.ix[alt]=beta_m
+            S_m=S.ix[alt]
+            oldalt = alt
+        
+        else:
+            delta_r=oldalt-alt
+            beta_int1+=(2.0/lrat_R)*beta_R.ix[alt]*delta_r
+            beta_int2+=2*(beta_R.ix[alt]/lrat.ix[alt])*(delta_r)
+            delta_Sprime=S.ix[alt]-S_m+beta_int1-beta_int2
+            S_int+=2*(np.exp(delta_Sprime)/lrat.ix[alt])*delta_r
+            
+            beta.ix[alt]=np.exp(delta_Sprime)/((1.0/beta_m)+S_int)
+            oldalt = alt
+        
+    return beta
     
 if __name__ == '__main__':
 
     z = np.arange(100,15000,3)
 
     wave = 532.0  #nm
-    lrat_p = 30.0
+    lrat_p1 = 30.0
+    lrat_p2 = 15
     lrat_m = 8.0*np.pi/3.0
 
     P_mol = molprof(z,wave)
 
-    z_layer = np.arange(1000,2000,5,dtype=np.float)
-
-    beta_layer = np.ones_like(z_layer)*5e-6
-
-    layer = pan.Series(data=beta_layer, index=z_layer)
+    z_layer1 = np.arange(1000,2000,5,dtype=np.float)
+    beta_layer1 = np.ones_like(z_layer1)*5e-6
+    layer1 = pan.Series(data=beta_layer1, index=z_layer1)
     
-    P_1 = addlayer(P_mol,layer,lrat_p)
+    z_layer2 = np.arange(5000,6000,5,dtype=np.float)
+    beta_layer2 = np.ones_like(z_layer2)*3e-6
+    layer2 = pan.Series(data=beta_layer2, index=z_layer2)
     
-    p_rangecor0 = pan.Series(P_mol.loc['vals'].values*(z**2),index=z)
+    P_1 = addlayer(P_mol,layer1,lrat_p1,inplace=False)
+    P_1 = addlayer(P_1,layer2,lrat_p2,inplace=True)
+    
+    p_rangecor0 = P_mol.loc['vals']*z**2
     p_norm0 = p_rangecor0/p_rangecor0.iloc[0]
-    p_rangecor1 = pan.Series(P_1.loc['vals'].values*(z**2) ,index=z)  
+    p_rangecor1 = P_1.loc['vals']*z**2 
     p_norm1 = p_rangecor1/p_rangecor1.iloc[0]
     
     p_noisy = backandnoise(p_norm1,inplace=False)
     
-    beta_fern = fernald(p_norm1,lrat_p,wave,1.0)
+    beta_fern = fernald(p_norm1,lrat_p1,wave,1.0)
+    sigma_fern=beta_fern*lrat_p1
     
     #Klett's lrat is the inverse of Fernald's
     
-    lrat_klett = P_1.loc['beta_t']/P_1.loc['alpha_t']
+    lrat = P_1.loc['alpha_t']/P_1.loc['beta_t']
     
-    lrat_klett=lrat_klett*0.99
+    lrat_klett=P_1.loc['alpha_p']/P_1.loc['beta_p'] #klett2 takes only particulte lrat
+    lrat_klett.fillna(0,inplace=True)
     
-    r_m = z[-1]
+    r_m = z[-2]
     
     sigma_m = P_mol.loc['alpha_R'].loc[r_m]
+    beta_klett, sigma_klett = klett(p_norm1,r_m,lrat,sigma_m)
+    beta_klett2 = klett2(p_norm1,lrat_klett,r_m=r_m)
+    sigma_klett2 = beta_klett2*lrat_klett    
     
-    S_klett = np.log(p_norm1)
+    delta_fern=(beta_fern-P_1.loc['beta_t'])/P_1.loc['beta_t']
+    delta_klett=(beta_klett-P_1.loc['beta_t'])/P_1.loc['beta_t']
+    delta_klett2=(beta_klett2-P_1.loc['beta_t'])/P_1.loc['beta_t']
+    betakeys=['Data','Fernald','Klett','Klett2']
+    deltakeys=['Fernald','Klett','Klett2']
+    betadict=dict(zip(betakeys,[P_1.loc['beta_t'],beta_fern,beta_klett,beta_klett2]))
+    deltadict=dict(zip(deltakeys,[delta_fern,delta_klett,delta_klett2]))
+    sigmadict=dict(zip(betakeys,[P_1.loc['alpha_t'],sigma_fern,sigma_klett,sigma_klett2]))
+    df_beta=pan.DataFrame.from_dict(betadict)
+    df_delta=pan.DataFrame.from_dict(deltadict)
+    df_sigma=pan.DataFrame(sigmadict)
     
-    beta_klett, sigma_klett = klett(S_klett,r_m,lrat_klett,sigma_m)
-    
-    prat = p_rangecor1/p_rangecor0
-    
-    p_slope0 = calc_slope(p_rangecor0)    
-    p_slope1 = calc_slope(p_rangecor1)    
-    prat_slope = calc_slope(prat)
+#    prat = p_rangecor1/p_rangecor0
+#    
+#    p_slope0 = calc_slope(p_rangecor0)    
+#    p_slope1 = calc_slope(p_rangecor1)    
+#    prat_slope = calc_slope(prat)
 
 #    fig1 = plt.figure()
 #    ax1 = fig1.add_subplot(1,3,1)
@@ -600,15 +690,15 @@ if __name__ == '__main__':
 #    ax3.plot(p_slope1,z)
 #    ax3.set_xlabel('Backscat Rat Slope')    
     
-    fig5 = plt.figure()
-    ax1 = fig5.add_subplot(1,2,1)
-    ax1.plot(((P_1.loc['beta_t'].values-beta_klett.values)/P_1.loc['beta_t'].values),z)
-    ax1.set_xlabel('Original backscatter coeffs')
-    ax1.set_ylabel('Altitude')
-    
-    ax2 = fig5.add_subplot(1,2,2)
-    ax2.plot(beta_klett.values,z,P_1.loc['beta_t'].values,z)
-    ax2.set_xlabel('Fernald Backscatter coeffs')
+#    fig5 = plt.figure()
+#    ax1 = fig5.add_subplot(1,2,1)
+#    ax1.plot(((P_1.loc['beta_t'].values-beta_klett.values)/P_1.loc['beta_t'].values),z)
+#    ax1.set_xlabel('Delta Beta [%]')
+#    ax1.set_ylabel('Altitude')
+#    
+#    ax2 = fig5.add_subplot(1,2,2)
+#    ax2.plot(beta_klett.values,z,P_1.loc['beta_t'].values,z)
+#    ax2.set_xlabel('Original (green) and Klett (blue) Backscatter coeffs')
 
 #    fig6 = plt.figure()
 #    ax1 = fig6.add_subplot(1,2,1)

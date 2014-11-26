@@ -67,10 +67,16 @@ def fileproc(newdir, **kwargs):
     starttime = kwargs.get('starttime',MPLtodatetime(startfile))
     endtime = kwargs.get('endtime',MPLtodatetime(endfile))
     
-    if len(rawfiles) == 1:   
-        d_filename = '{0}_proc.h5'.format(startfile.split('.')[0])
-    else:        
-        d_filename = '{0}-{1}_proc.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
+    if savetype=='standard':
+        if len(rawfiles) == 1:   
+            d_filename = '{0}_proc.h5'.format(startfile.split('.')[0])
+        else:        
+            d_filename = '{0}-{1}_proc.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
+    elif savetype=='IDL':
+        if len(rawfiles) == 1:   
+            d_filename = '{0}_IDL.h5'.format(startfile.split('.')[0])
+        else:        
+            d_filename = '{0}-{1}_IDL.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
     
     for r in rawfiles:
         [path,tempname] = os.path.split(r)
@@ -266,14 +272,15 @@ def clearall():
         del globals()[uniquevar]
         
 if __name__ == '__main__':
+    
     import MPLtools as mtools
     
     altrange=range(150,15180,30)
     timestep='60S'
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
     procdir = mtools.set_dir('Select folder to process files from')
-    fileproc(procdir,doplot=True,saveplot=False,showplot=True,verbose=True,
-             altrange=altrange,timestep=timestep,NRB_limits=(0.0,1.0,0.2),savetype='IDL')
+    fileproc(procdir,doplot=True,saveplot=True,showplot=True,verbose=True,
+             altrange=altrange,timestep=timestep,NRB_limits=(0.0,1.0,0.2),savetype='standard')
     
 #    plotfile = mtools.get_files('Select File to Plot', filetype = ('.h5', '*.h5'))
 #    quickplot(plotfile)
