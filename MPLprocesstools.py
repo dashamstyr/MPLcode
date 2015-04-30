@@ -8,7 +8,6 @@ import os,sys
 import pandas as pan
 import numpy as np
 from copy import deepcopy
-import lidar_tools as ltools
 from itertools import groupby
 from scipy import signal
 import MPLtools as mtools
@@ -19,6 +18,7 @@ import MPLplot as mplot
 import operator
 import inversiontools as itools
 from scipy import optimize as opt
+from copy import deepcopy
 
 def calc_slope(prof, winsize = 10):
     
@@ -150,10 +150,11 @@ def calc_SNR_depolrat(depolrat,**kwargs):
     
     return SNR_out
 
-def partdepolratcalc(depolin):
+def partdepolratcalc(depolin,beta_parallel,beta_mol,moldepolrat=0.0035):
     
-    moldepolrat=0.0035 #narrow double filter allows only Cabannes line (see SPIE proc reference)
-    partdepolrat=(2*depolin*moldepolrat-moldepolrat**2)/(moldepolrat+1-depolin)
+    #default moldepolrat: narrow double filter allows only Cabannes line (see SPIE proc reference)
+    A = moldepolrat/(1+moldepolrat)
+    partdepolrat=(depolin*beta_parallel-A*beta_mol)/(beta_parallel-A*beta_mol)
     
     return partdepolrat
 
@@ -443,8 +444,8 @@ def molecular_detect(MPLin,**kwargs):
     #Step 1: calculate molecular profile
     z=NRBin.columns.values
     altstep=z[1]-z[0]  #assumes regular altitude steps throughout
-    Pmol=ltools.molprof(z,wave)
-    Pmol_cor=Pmol.ix['vals']
+    Pmol=itools.molprof(z,wave)
+    Pmol_cor=Pmol['vals']
     panelout=pan.Panel(major_axis=NRBin.index,minor_axis=['Base','Top'])
     
     for proftime in NRBin.index:    
@@ -500,8 +501,8 @@ def molecular_detect_single(tempprof,dataprof,**kwargs):
     #Step 1: calculate molecular profile
     z=tempprof.index.values
     altstep=z[1]-z[0]  #assumes regular altitude steps throughout
-    Pmol=ltools.molprof(z,wave)
-    Pmol_cor=Pmol.ix['vals']
+    Pmol=itools.molprof(z,wave)
+    Pmol_cor=Pmol['vals']
     
     #Step 3: divide the two and average together until noise is tamped down
     temprat=Pmol_cor/tempprof
@@ -524,7 +525,7 @@ def molecular_detect_single(tempprof,dataprof,**kwargs):
     tempmask=pan.Series(z,index=[v<=varthresh*s**2 for v,s in zip(variance,sigmaprof)])
     tempgroups=tempmask.groupby(level=0)
     dfout=pan.DataFrame(columns=['Base','Top'])
-    baseponts=[]
+    basepoints=[]
     toppoints=[]
     for g in tempgroups:
         if g[0]:
@@ -550,28 +551,6 @@ def molecular_detect_single(tempprof,dataprof,**kwargs):
 def PBL_detect(MPLin,**kwargs):
     
     """
-    Approximates the edge of the boundary layer using some combination
-    of three algorithms:
-    1) Negative slope threshold:  this defines the boundary layer as the lowest
-    altitude the exceeds some negative slope threshold
-    2) Value threshold:  this defines the top of the boundary layer as the lowest altitude
-    for which the NRB dips bel6ow a value threshold
-    3) Combination threshold:  Uses a combinaiton of the above two methods
-    
-    Inputs:
-    dfin - A pandas dataframe containing a series of lidar profileswith altitude as the index
-            and datetime as the column names
-    algo - a string determining which algorithms to use.  Can be either:
-            "slope" - purely slope threshold
-            "value" - purely NRB threshold
-            "combo" - combined algorithm
-    slope_thresh - a floating point number defining the minimum slope to be used in the slope algorithm
-    val_thresh - a floating point number defining the value threshold for the NRB value algorithm
-    numvals - the number of consecutive values that must be below the slope or value threshold in order to be counted
-    maxalt - an altitude in meters above which the algorithm is not longer applied
-    
-    Outputs:
-    BL_out - a pandas series with datetime index and a boundary layer altitude in meters
     """    
     wavelet=kwargs.get('wavelet',dog)
     widths=kwargs.get('widths',[4])
@@ -619,7 +598,12 @@ def PBL_detect(MPLin,**kwargs):
         CWTminalts=z[minloc]
         
         tempmolht=mol_min.loc[i,'Base']
-        templayerht=layer_min.loc[i,'Base']
+        
+        try:
+            templayerht=layer_min.loc[i,'Base']
+        except AttributeError:
+            templayerht=layer_min
+            
         edgealt=z[layerwidth]
         
         if np.isnan(templayerht) or tempmolht<=templayerht:
@@ -690,7 +674,8 @@ def find_layers(MPLin,**kwargs):
     #if MPLin does not have all necessary processed data,generate it
     wavelet=kwargs.get('wavelet',signal.ricker)
     widths=kwargs.get('widths',[2])
-    layerwidth=kwargs.get('layerwidth',2)
+    CWTwidth=kwargs.get('CWTwidth',2)
+    minwidth=kwargs.get('minwidth',4)
     bg_alt=kwargs.get('bg_alt',[])
     noisethresh=kwargs.get('noisethresh',3)
     cloudthresh=kwargs.get('cloudthresh',(1,0.4))
@@ -721,7 +706,7 @@ def find_layers(MPLin,**kwargs):
         tempdepolratprof=rawdepolrat.ix[i]
         z=tempprof.index
         #set baseline noise level based on 
-        tempsigma0=np.mean(tempprof,bg_alt)
+        tempsigma0=np.mean(calc_sigma(tempprof,bg_alt))
         
         temp_cwt=signal.cwt(tempprof,wavelet,widths)
         tempmax=maxmin(temp_cwt,widths,np.greater)
@@ -729,9 +714,9 @@ def find_layers(MPLin,**kwargs):
         
         #use only width of 2 for now
         
-        minloc=[minval[1] for minval in tempmin if minval[0]==layerwidth]
-        maxloc=[maxval[1] for maxval in tempmax if maxval[0]==layerwidth]
-        templayers=layer_filter(tempprof,tempdepolprof,maxloc,minloc,noisethresh,sigma0=tempsigma0)
+        minloc=[minval[1] for minval in tempmin if minval[0]==CWTwidth]
+        maxloc=[maxval[1] for maxval in tempmax if maxval[0]==CWTwidth]
+        templayers=layer_filter(tempprof,tempdepolprof,maxloc,minloc,noisethresh,minwidth,sigma0=tempsigma0)
         
         for n in range(len(templayers)):
             indices=templayers[n]
@@ -745,10 +730,10 @@ def find_layers(MPLin,**kwargs):
             layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
 #            meandepolrat=np.mean(layerdepolratprof)
             peakval=tempprof.ix[peakalt]
-            if peakval >= cloudthresh[0] or minalt>=8000:
+            if peakval >= cloudthresh[0]:
                 layertype='cloud'  
                 layersubtype,layerratio=icewaterfilter(meandepolrat)
-            elif peakval >= cloudthresh[1] or meandepolrat>0.25:
+            elif peakval >= cloudthresh[1] and meandepolrat>0.25:
                 layertype='cloud'  
                 layersubtype,layerratio=icewaterfilter(meandepolrat)
             else:
@@ -769,7 +754,7 @@ def find_layers(MPLin,**kwargs):
         
     return panelout
 
-def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,sigma0=[]):
+def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,minwidth=4,sigma0=[]):
     """
     takes a profile and a list of local maxima and minima from CWT analysis and calculates
     layer edges and peaks while filtering out peaks for which the delta from 
@@ -827,11 +812,12 @@ def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,sigma0=[]):
 #                    temppeakval=np.max(prof.iloc[templowedge:edge_above])
 #                    temppeakloc=np.where(prof.values==temppeakval)
                     tempprof=prof.iloc[templowedge:edge_above]
-                    tempdepolprof=depolprof.iloc[templowedge:edge_above]
-#                    delta=max(delta_lower,delta_upper)
-                    depol_layers=find_depollayers(tempprof,tempdepolprof,signalsigma0=sigma0)
-                    
-                    layers+=depol_layers
+                    if len(tempprof>=minwidth):
+                        tempdepolprof=depolprof.iloc[templowedge:edge_above]
+    #                    delta=max(delta_lower,delta_upper)
+                        depol_layers=find_depollayers(tempprof,tempdepolprof,signalsigma0=sigma0)
+                        
+                        layers+=depol_layers
 #                    layers.append((templowedge,temppeakloc,edge_above,max(delta_lower,delta_upper)))
                     try:
                         nextpeak=[p for p in maxiloc if p >edge_above][0]
@@ -995,7 +981,7 @@ def aerosoltypefilter(depolrat,**kwargs):
     return typeout,ratout
 
     
-def colormask(mplin,pblin,molin,layersin):
+def colormask_fromdict(mplin,pblin,molin,layersin):
     
     alts=mplin.NRB[0].columns
     times=mplin.NRB[0].index
@@ -1148,7 +1134,8 @@ def findalllayers(filename,**kwargs):
     layernoisethresh=kwargs.get('layernoisethresh',0.4)
     cloudthresh=kwargs.get('cloudthresh',(1.0,0.20))
     layerdtype=kwargs.get('layerdtype','NRB')
-    layerwidth=kwargs.get('layerwidth',4)
+    CWTwidth=kwargs.get('CWTwidth',2)
+    layerminwidth=kwargs.get('minwidth',4)
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
     savemasks=kwargs.get('savemasks',True)
@@ -1163,7 +1150,8 @@ def findalllayers(filename,**kwargs):
     
     molecular=molecular_detect(mpltest,varthresh=molthresh, winsize=molwinsize) 
     layers=find_layers(mpltest,noisethresh=layernoisethresh,cloudthresh=cloudthresh,
-                       datatype=layerdtype,layerwidth=layerwidth,widths=layerCWTrange)        
+                       datatype=layerdtype,CWTwidth=CWTwidth,widths=layerCWTrange,
+                       minwidth=layerminwidth)        
     mol_min=molecular.loc['Layer0']
     try:
         layer_min=layers.loc['Layer0']
@@ -1205,10 +1193,8 @@ def layermaskplot(mpl,**kwargs):
     if SNRmask:
         MPLmasked = mpl.SNR[SNRmasktype][0]>=SNRthresh
         MPLmasked.replace(False,np.nan,inplace=True)
-    else:
-        SNRmasked=[]
     
-    mask,colordict=colormask(mpl,PBL,molecular,layers)
+    mask,colordict=colormask_fromdict(mpl,PBL,molecular,layers)
     minalt=altrange[0]
     maxalt=altrange[-1]
     kwargs={'hours':hours,'altrange':(minalt,maxalt),'SNRmask':SNRmask,'saveplot':saveplot,
@@ -1222,20 +1208,15 @@ def scenemaker(layerdict,**kwargs):
     
     Inputs:
     layerdict - dict objct containing the following key-value pairs
-    mpl - MPL class object containing processed lidar data
-    molecular - dataframe contianing masks of molecular regions
-    layers - panel containing informaion on identified layers
-    PBL - series containing PBL height
     
     kwargs:
+    PBLrat - 
     
     """
     mpl=layerdict['mpl']
     molecular=layerdict['molecular']
     layers=layerdict['layers']
     PBL=layerdict['pbl']
-    alts=mpl.NRB[0].columns
-    times=mpl.NRB[0].index
     
     PBLrat=kwargs.get('PBLrat',30.0)
     molrat=kwargs.get('molrat',8.0*np.pi/3.0)
@@ -1244,13 +1225,32 @@ def scenemaker(layerdict,**kwargs):
     udefdepol=kwargs.get('udefdepol',0.0035)
     savefile=kwargs.get('savefile',False)
     savefilename=kwargs.get('savefilename','test.h5')
+    colordict=kwargs.get('colordict',[])
     
+    if not colordict:
+        colordict={'molecular':0,
+                   'PBL':1,
+                   'ice':2,
+                   'water':3,
+                   'mixed':4,
+                   'dust':5,
+                   'smoke':6,
+                   'water_soluble':7,
+                   'unidentified':8}
+                   
+    alts=mpl.data[0].columns
+    times=mpl.data[0].index
     #initialize dataframes 
     typemask=pan.DataFrame(index=times,columns=alts)
     subtypemask=pan.DataFrame(index=times,columns=alts)
     lrat=pan.DataFrame(index=times,columns=alts)
     depolrat=pan.DataFrame(index=times,columns=alts)
     delta=pan.DataFrame(index=times,columns=alts)
+    layerbase=pan.DataFrame(index=times,columns=alts)
+    layertop=pan.DataFrame(index=times,columns=alts)
+    colormask=pan.DataFrame(index=times,columns=alts)
+    
+
     
     #fill dataframes with values defined by layerdict
     for t in times:
@@ -1258,18 +1258,26 @@ def scenemaker(layerdict,**kwargs):
         templayers=layers.ix[:,t].dropna(axis=1,how='all')
         tempPBL=PBL.ix[t]
         #first assign PBL props to altitudes below PBL height
-        
+        typemask.loc[t,typemask.columns<=tempPBL]='PBL'
+        subtypemask.loc[t,subtypemask.columns<=tempPBL]='PBL'
+        lrat.loc[t,lrat.columns<=tempPBL]=PBLrat
+        depoltemp=mpl.depolrat[0].ix[t]
+        depolrat.loc[t,depolrat.columns<=tempPBL]=np.mean(depoltemp[depoltemp.index<tempPBL])
+        layerbase.loc[t,layerbase.columns<=tempPBL]=alts[0]
+        layertop.loc[t,layertop.columns<=tempPBL]=tempPBL
+        colormask.loc[t,colormask.columns<=tempPBL]=colordict['PBL']
         #then assign molecular props to altitudes identified as such
         for m in tempmol.iteritems():
             base=m[1]['Base']
             top=m[1]['Top']
             typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='molecular'
-            subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='molecular'
+            subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='molecular'            
             lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=molrat
             depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=moldepol
             delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0.0
-            
-            
+            layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
+            layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top  
+            colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['molecular']
         #finally assign layer properties to each layer one by one
         for l in templayers.iteritems():
             base=l[1]['Base']
@@ -1284,121 +1292,505 @@ def scenemaker(layerdict,**kwargs):
             lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=temprat
             depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=tempdepol
             delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=tempdelta
-        
-        typemask.loc[t,typemask.columns<=tempPBL]='PBL'
-        subtypemask.loc[t,subtypemask.columns<=tempPBL]='PBL'
-        lrat.loc[t,lrat.columns<=tempPBL]=PBLrat
-        depoltemp=mpl.depolrat[0].ix[t]
-        depolrat.loc[t,depolrat.columns<=tempPBL]=np.mean(depoltemp[depoltemp.index<tempPBL])
+            layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
+            layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
+            colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict[tempsubtype]
     
-    typemask.fillna('Undefined',inplace=True)
-    subtypemask.fillna('Undefined',inplace=True)
-    lrat.fillna(udefrat,inplace=True)
-    depolrat.fillna(udefdepol,inplace=True)    
-    paneldict={'Type':typemask,'Sub-Type':subtypemask,'Lidar_Ratio':lrat,'Depol':depolrat,'Delta':delta}
+        #find and classify unidentified areas
+        tempprof=typemask.loc[t]
+        tempprof.fillna('unidentified',inplace=True)
+        tempmask=pan.Series(alts,index=[v=='unidentified' for v in tempprof])
+        tempgroups=tempmask.groupby(level=0) 
+        #assuming uniform altitude steps
+        altstep=alts[1]-alts[0]
+        for g in tempgroups:
+            if g[0]:
+                tempalts=g[1]
+                for key,alt in groupby(enumerate(tempalts), lambda (i,x):i-(x-tempalts.iloc[0])/altstep):                    
+                    layeralt=map(operator.itemgetter(1),alt)
+                    if len(layeralt)==1:
+                        continue
+                    else:
+                        base=layeralt[0]
+                        top=layeralt[-1]
+                        typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='unidentified'
+                        subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='unidentified'
+                        lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=udefrat
+                        depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=udefdepol
+                        delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0
+                        layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
+                        layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
+                        colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['unidentified']
+                        
+    typemask.fillna(method='ffill',inplace=True)
+    subtypemask.fillna(method='ffill',inplace=True) 
+    lrat.fillna(method='ffill',inplace=True)
+    depolrat.fillna(method='ffill',inplace=True)
+    layerbase.fillna(method='ffill',inplace=True)
+    layertop.fillna(method='ffill',inplace=True)
+    colormask.fillna(method='ffill',inplace=True)
+    paneldict={'Type':typemask,'Sub-Type':subtypemask,'Lidar_Ratio':lrat,'Depol':depolrat,
+               'Delta':delta,'Base':layerbase,'Top':layertop,'Color':colormask}
     panelout=pan.Panel.from_dict(paneldict)
     
-    if savefile:
-        store=pan.HDFStore(savefilename)
-        store['mpl']=mpl
-        store['scenepanel']=panelout
-        
-    return panelout
+    mpl.scenepanel=[panelout]
 
-def opticaldepth(extinctprof): 
+    if savefile:
+        mpl.save_to_HDF(savefilename)        
+
+    return mpl
+
+def Tfromextinction(extinctprof): 
     alts=extinctprof.index
     tau=0.0
     oldz=alts[0]
     oldex=extinctprof.ix[oldz]
     for z in alts[1:]:
         deltaz=z-oldz
-        tempex=(extinctprof.ix[z]+oldex)/2.0
+        tempex=(oldex+extinctprof.ix[z])/2.0
         tau+=-2*tempex*deltaz
         oldz=z
         oldex=extinctprof.ix[z]    
-    depth=np.exp(tau)
-    return depth
+    Tout=np.exp(tau)
+    return Tout
     
-def basiccorrection(mpl,scenepanel,**kwargs):
+def Tfromprofile(prof,refprof=[],**kwargs):
+    #requires profile containing at least [numvals] points on top and bottom
+    #of molecular scattering free of aerosols
+    wave=kwargs.get('wave',532.0)
+    average=kwargs.get('average',True)
+    numvals=kwargs.get('numvals',10)
     
+    alts=prof.index.values
+    if not refprof:
+        refprof=itools.molprof(alts,wave=wave)['vals']*alts**2
+    
+    if average:
+        profabove=np.mean(prof.iloc[-numvals:])
+        profbelow=np.mean(prof.iloc[:numvals])
+        refabove=np.mean(refprof.iloc[-numvals:])
+        refbelow=np.mean(refprof.iloc[:numvals])
+    else:
+        profabove=prof.iloc[-1]
+        profbelow=prof.iloc[0]
+        refabove=prof.iloc[-1]
+        refbelow=prof.iloc[0]
+    
+    normrat=refbelow/profbelow
+    Tout=profabove*normrat/refabove
+    return Tout
+
+def Tmolecular(minalt,maxalt,refprof=[],wave=532.0):
+    alts=np.arange(minalt,maxalt+1,1)
+    if not refprof:
+        refprof=itools.molprof(alts,wave=wave)['sigma_t']
+    Tout=refprof.iloc[-1]/refprof.iloc[0]
+    return Tout
+
+def Tfrombounds(molbelow,molabove,wave=532.0):
+    refalts=np.arange(molbelow.index[0],molabove.index[-1]+1,1)
+    refprof=itools.molprof(refalts,wave=wave)['vals']*refalts**2
+    refbelow=refprof.ix[molbelow.index]
+    refabove=refprof.ix[molabove.index]        
+    normrat=np.mean(refbelow.values)/np.mean(molbelow.values)
+    Tout=np.mean(molabove.values)*normrat/np.mean(refabove.values)
+    return Tout
+
+def coefprofs(profin,lratprof,**kwargs):
+    method=kwargs.get('method','klett2')
+    refalt=kwargs.get('refalt',[])
+    energy=kwargs.get('energy',1.0)
+    calrange=kwargs.get('calrange',[])
+    wave=kwargs.get('wave',532.0)
+    
+    if np.all(np.isnan(profin)):
+        backprof=pan.Series(0,index=profin.index)
+        extprof=backprof
+    else:    
+        if method=='fernald':
+            if not calrange:
+                calrange=[profin.index.values[-20],profin.index.values[-1]]
+            lratin=np.mean(lratprof)
+            backprof,extprof=itools.fernald(profin,lratin,E=energy,calrange=calrange)
+        elif method=='klett':
+            if not refalt:
+                refalt=profin.index[-1]
+            refext=itools.molprof([refalt],wave).loc['sigma_t'].values[0]
+            backprof,extprof=itools.klett(profin,lratprof,r_m=refalt,sigma_m=refext)
+        elif method=='klett2':
+            lratin=np.mean(lratprof)
+            backprof,extprof=itools.klett2(profin,lratprof)
+    return backprof,extprof
+    
+def basiccorrection(mpl,**kwargs):    
     wave=kwargs.get('wave',532.0)
     refalt=kwargs.get('refalt',[])
     method=kwargs.get('method','klett2')
-    lrat=kwargs.get('lrat',30)
+    lrat=kwargs.get('lrat',[])
+    mode=kwargs.get('mode','copol')
     
-    NRB=mpl.NRB[0]
-    times=NRB.index
-    alts=NRB.columns
-    backscatter=pan.DataFrame(index=times,columns=alts,dtype='float')
-    extinction=pan.DataFrame(index=times,columns=alts,dtype='float')
-    if method=='klett':
-        P_mol=itools.molprof(alts,wave)
-        tempmol=P_mol.loc['alpha_t']
+    times=mpl.data[0].index
+    alts=mpl.data[0].columns
+    backscatter_copol=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
+    extinction_copol=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
+    backscatter_crosspol=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
+    extinction_crosspol=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
     
-    for t in times:
-        tempprof=NRB.ix[t]
-        if not refalt:
-            for a in alts[::-1]:
-                if not np.isnan(tempprof.ix[a]):
-                    refalt=a
-                    break
-        templrat=scenepanel.loc['Lidar_Ratio',t]
-        if method=='fernald':
-            energy=mpl.header['energy'].ix[t]
-            tempbeta=itools.fernald(tempprof,lrat=lrat,wave=wave,E=energy,calrange=[a-100,a])
-            tempsigma=tempbeta*lrat
-        elif method=='klett':
-            refsig=tempmol.ix[a]
-            tempbeta,tempsigma=itools.klett(tmepprof,r_m=refalt,tmeplrat,sigma_m=refsig)
-        elif method=='klett2':
-            tempbeta=itools.klett2(tempprof,templrat,r_m=refalt)
-            tempsigma=tempbeta*templrat
-        backscatter.ix[t]=tempbeta
-        extinction.ix[t]=tempsigma
+    if mode=='copol' or mode=='both':
+        NRB=mpl.NRB[0]
+        scenepanel=mpl.scenepanel[0]
+        
+        for t in times:
+            tempprof=NRB.ix[t]
+            if not refalt:
+                for a in alts[::-1]:
+                    if not np.isnan(tempprof.ix[a]):
+                        refalt=a
+                        break
+            if lrat:
+                templrat=pan.Series(data=lrat,index=alts)
+            else:
+                templrat=scenepanel.loc['Lidar_Ratio',t]
+            coefkwargs={}
+            coefkwargs['wave']=wave
+            coefkwargs['refalt']=refalt
+            coefkwargs['method']=method
+            coefkwargs['energy']=mpl.header['energy'].ix[t]
+            coefkwargs['calrange']=[a-100,a]
+            tempbeta,tempsigma=coefprofs(tempprof,templrat,**coefkwargs)
+            backscatter_copol.ix[t]=tempbeta
+            extinction_copol.ix[t]=tempsigma
     
-    return backscatter,extinction
+    if mode=='crosspol' or mode=='both':
+        NRB=mpl.NRB[1]
+        scenepanel=mpl.scenepanel[1]        
+        for t in times:
+            tempprof=NRB.ix[t]
+            if not refalt:
+                for a in alts[::-1]:
+                    if not np.isnan(tempprof.ix[a]):
+                        refalt=a
+                        break
+            if lrat:
+                templrat=pan.Series(data=lrat,index=alts)
+            else:
+                templrat=scenepanel.loc['Lidar_Ratio',t]
+            coefkwargs={}
+            coefkwargs['wave']=wave
+            coefkwargs['refalt']=refalt
+            coefkwargs['method']=method
+            coefkwargs['energy']=mpl.header['energy'].ix[t]
+            coefkwargs['calrange']=[a-100,a]
+            tempbeta,tempsigma=coefprofs(tempprof,templrat,**coefkwargs)
+            backscatter_crosspol.ix[t]=tempbeta
+            extinction_crosspol.ix[t]=tempsigma
+        
+    mpl.backscatter=[backscatter_copol,backscatter_crosspol]        
+    mpl.extinction=[extinction_copol,extinction_crosspol]
+        
+    return mpl
 
-def depthmatcher(lrat,NRBprof,depth,method='klett2'):
-    if method=='klett2':
-        lratprof=pan.Series(data=lrat,index=NRBprof.index)
-        backprof=itools.klett2(NRBprof,lratprof)
-        extprof=backprof*lrat
-        calcdepth=opticaldepth(extprof)
-    return depth-calcdepth
+def Tmatcher(lrat,profin,Tin,method,layerrange,wave,energy,refalt,calrange):    
+    alts=profin.index
+    if not refalt:
+        for a in alts[::-1]:
+            if not np.isnan(profin.ix[a]):
+                refalt=a
+                break
+    
+    coefkwargs={}
+    coefkwargs['wave']=wave
+    coefkwargs['refalt']=refalt
+    coefkwargs['method']=method
+    coefkwargs['calrange']=calrange
+    coefkwargs['energy']=energy
+    lratprof=pan.Series(data=lrat,index=profin.index)
+    backprof,extprof=coefprofs(profin,lratprof,**coefkwargs)    
+    Tcalc=Tfromextinction(extprof.ix[layerrange[0]:layerrange[-1]])
+    return Tin-Tcalc
 
-def simplelayercorrection(NRBprof,lrat0,depth,**kwargs):
+def lratpart(beta_t,lrat_t,wave=532.0,tol=1e-2):
+    lrat_m=8.0*np.pi/3.0
+    
+    alts=beta_t.index.values
+    beta_m=itools.molprof(alts,wave=wave).loc['beta_t']
+    
+    diffbeta=(beta_t-beta_m)/beta_m
+    lrat_p=(lrat_t*beta_t-lrat_m*beta_m)/(beta_t-beta_m)
+    lrat_out=lrat_p*diffbeta.gt(tol)
+    lrat_out.fillna(0.0,inplace=True)
+    
+    return lrat_out
+
+def simplelayercorrection(layerprof,backprof,extprof,lrat0,**kwargs):
+    #profin must be bounded 
+    molbelow=kwargs.get('molbelow',[])
+    molabove=kwargs.get('molabove',[])
     method=kwargs.get('method','klett2')
     lratrange=kwargs.get('lratrange',[10,100])
     tolerance=kwargs.get('tolerance',0.01)
     numreps=kwargs.get('numreps',100)
-    #calculate optical depth from lidar ratio
-    lratcor=opt.newton(depthmatcher,lrat0,args=[NRBprof,depth,method],maxiter=numreps,tol=tolerance)
-    
-    if lratrange[0]<=lratcor<=lratrange[1]:
-        return lratcor
+    wave=kwargs.get('wave',532.0)
+    average=kwargs.get('average',True)
+    numvals=kwargs.get('numvals',10)
+    partrat=kwargs.get('partrat',True)
+    energy=kwargs.get('energy',1.0)
+    #calculate optical depth from profile or boundaries
+    if len(molbelow)>0 and len(molabove)>0:
+        Tin=Tfrombounds(molbelow,molabove)
     else:
-        return lrat0
+        Tin=Tfromprofile(layerprof,wave=wave,average=average,numvals=numvals)    
+    #calculate optical depth from lidar ratio
+    layerrange=[layerprof.index[0],layerprof.index[-1]]    
+    if method=='klett2':
+        refalt=[]
+        calrange=[]
+        try:
+            lratcor=opt.newton(Tmatcher,lrat0,args=(layerprof,Tin,method,layerrange,wave,energy,refalt,calrange),maxiter=numreps,tol=tolerance)
+            print "{0} successfully corrected to {1} after < {2} iterations".format(lrat0,lratcor,numreps)
+        except RuntimeError:
+            lratcor=lrat0
+            print "Warning! Failed to converge after {0} iterations".format(numreps)
+        coefkwargs={}
+        coefkwargs['refalt']=refalt
+        coefkwargs['method']=method
+        coefkwargs['wave']=wave
+        coefkwargs['calrange']=calrange
+        coefkwargs['energy']=energy
+        if lratrange[0]<=lratcor<=lratrange[1]:
+            lratprof=pan.Series(data=lratcor,index=layerprof.index)
+            backprof,extprof=coefprofs(layerprof,lratprof,**coefkwargs)        
+        else:
+            lratprof=pan.Series(data=lrat0,index=layerprof.index)
+            backprof,extprof=coefprofs(layerprof,lratprof,**coefkwargs) 
+        if partrat:
+                lratout=lratpart(backprof,lratcor)
+                lratprof=pan.Series(data=lratout,index=layerprof.index) 
+    else:
+        tempprof=layerprof.append(molabove)
+        refalt=tempprof.index[-1]
+        if len(molabove)>numvals:
+            calrange=[tempprof.index[-numvals],tempprof.index[-1]]
+        else:
+            calrange=[molabove.index[0],molabove.index[-1]]
+        try:
+            lratcor=opt.newton(Tmatcher,lrat0,args=(tempprof,Tin,method,layerrange,wave,energy,refalt,calrange),maxiter=numreps,tol=tolerance)
+            print "{0} successfully corrected to {1} after < {2} iterations".format(lrat0,lratcor,numreps)
+        except RuntimeError:
+            lratcor=lrat0
+            print "Warning! Failed to converge after {0} iterations".format(numreps)
+        coefkwargs={}
+        coefkwargs['refalt']=refalt
+        coefkwargs['method']=method
+        coefkwargs['wave']=wave
+        coefkwargs['calrange']=calrange
+        coefkwargs['energy']=energy
+        if lratrange[0]<=lratcor<=lratrange[1]:
+            lratout=lratcor
+        else:
+            lratout=lrat0
+        molrat=8.0*np.pi/3.0
+        lratprof_ref=pan.Series(data=molrat,index=molabove.index)
+        lratprof=pan.Series(data=lratout,index=layerprof.index)
+        templratprof=lratprof.append(lratprof_ref)
+        tempbackprof,tempextprof=coefprofs(tempprof,templratprof,**coefkwargs)
+        backprof=tempbackprof.ix[layerprof.index[0]:layerprof.index[-1]]
+        extprof=tempextprof.ix[layerprof.index[0]:layerprof.index[-1]]
+        if partrat:
+            lratprof=lratpart(backprof,lratout)
     
+    return backprof,extprof,lratprof
+
+def sceneoptimize(mplin,**kwargs):
+    wave=kwargs.get('wave',532.0)
+    refalt=kwargs.get('refalt',[])
+    method=kwargs.get('method','klett2')
+    calrange=kwargs.get('calrange',[])
+    lrat=kwargs.get('lrat',[])
+    inplace=kwargs.get('inplace',True)
+    mode=kwargs.get('mode','copol')
+        
+    NRB=mplin.NRB[0]
+    times=NRB.index
+    alts=NRB.columns
+    if inplace:
+        mplout=mplin
+    else:
+        mplout=deepcopy(mplin)
     
-#STEP 1: Check SNR against threshold
-
-#Step 2: IF SNR exceeds threshold, use difference between NRB above feature and below to calculate optical depth
-
-#Step 3: Use optical depth to refine lidar ratio 
-
-#Step 3a: Apply initial guess at lidar ratio to calculate backscatter ratios within layer
-#Step 3b: Use backscatter ratios to calculate estimated optical depth
-#Step 3c: Compare to empirical optical depth
-#Step 3d: adjust and repeat
-
-#Step 4: Check for negative or runaway values above and adjust starting point
-
-#Step 2: Assume lidar ratio of 30 for PBL and perform correction for all higher features
+    #start by performing initial backscatter and extinction corrections using initial lrat values
+    coefkwargs={}
+    coefkwargs['refalt']=refalt
+    coefkwargs['method']=method
+    coefkwargs['wave']=wave
+    coefkwargs['calrange']=calrange
+    coefkwargs['lrat']=lrat
+    coefkwargs['mode']=mode
     
-
-#Step 3: Loop through features by altitude
-
-#Step 4: IF feature is simple, employ simple feature process, adjust features above
+    if len(mplout.backscatter)==0 or len(mplout.extinction)==0:
+        mplout=basiccorrection(mplout,**coefkwargs)
+        
+    if mode=='copol' or mode=='both':
+        backscatter=mplout.backscatter[0]
+        extinction=mplout.extinction[0]
+        try:
+            panelout=mplout.scenepanel[0]
+        except IndexError:
+            print "Missing {0} Scene Panel".format(mode)
+            return mplout
+        #then go through profiles one by one and perform corrections for each layer
+        dflrat=panelout.loc['Lidar_Ratio']
+        for t in times:
+            NRBprof=NRB.loc[t]
+            lratprof=panelout.loc['Lidar_Ratio',t]
+            baseprof=panelout.loc['Base',t]
+            topprof=panelout.loc['Top',t]
+            typeprof=panelout.loc['Type',t]
+            backprof=backscatter.loc[t]
+            extprof=extinction.loc[t]
+            a=alts[0]
+            while True:
+                layerbase=baseprof[a]
+                layertop=topprof[a]
+                lrat=lratprof[a]
+                ltype=typeprof[a]
+                lratbelow=lratprof[lratprof.index<layerbase]
+                lratabove=lratprof[lratprof.index>layertop]
+                typebelow=typeprof[typeprof.index<layerbase]
+                typeabove=typeprof[typeprof.index>layertop]
+                if len(lratabove)==0:
+                    break
+                if len(lratbelow)==0:
+                    a=lratabove.index[0]
+                    continue
+                if ltype=='PBL' or ltype=='molecular' or ltype=='unidentified':
+                    a=lratabove.index[0]
+                else:                
+                    if typebelow.iloc[-1]=='molecular' and typeabove.iloc[0]=='molecular':
+                        tempNRB=NRBprof[(NRBprof.index>=layerbase)&(NRBprof.index<=layertop)]
+                        tempback=backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]
+                        tempext=extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]
+                        tempprof=[]
+                        z=[]
+                        for tempalt in lratbelow.index[::-1]:
+                            if typebelow.ix[tempalt]=='molecular':
+                                z.append(tempalt)
+                                tempprof.append(NRBprof.ix[tempalt])
+                            else:
+                                break
+                        molbelow=pan.Series(tempprof[::-1],index=z[::-1])
+                        tempprof=[]
+                        z=[]
+                        for tempalt in lratabove.index:
+                            if typeabove.ix[tempalt]=='molecular':
+                                z.append(tempalt)
+                                tempprof.append(NRBprof.ix[tempalt])
+                            else:
+                                break
+                        molabove=pan.Series(tempprof,index=z)
+                        corkwargs={}
+                        corkwargs['energy']=mplin.header['energy'].ix[t]
+                        corkwargs['method']=method
+                        corkwargs['molbelow']=molbelow
+                        corkwargs['molabove']=molabove
+                        
+                        print "Type is {0} mean signal is {1}".format(ltype,np.mean(tempNRB))
+                        backcor,extcor,lratcor=simplelayercorrection(tempNRB,tempback,tempext,lrat,**corkwargs)
+                        backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]=backcor
+                        extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]=extcor
+                        lratprof[(lratprof.index>=layerbase)&(lratprof.index<=layertop)]=lratcor
+                
+                    a=lratabove.index[0]
+            backscatter.loc[t]=backprof
+            extinction.loc[t]=extprof
+            dflrat.loc[t]=lratprof
+        panelout.loc['Lidar_Ratio']=dflrat
+        
+        mplout.backscatter[0]=backscatter
+        mplout.extinction[0]=extinction
+        mplout.scenepanel[0]=panelout
+    
+    if mode=='crosspol' or mode=='both':
+        backscatter=mplout.backscatter[1]
+        extinction=mplout.extinction[1]
+        try:
+            panelout=mplout.scenepanel[1]
+        except IndexError:
+            print "Missing {0} Scene Panel".format(mode)
+            return mplout
+        #then go through profiles one by one and perform corrections for each layer
+        dflrat=panelout.loc['Lidar_Ratio']
+        for t in times:
+            NRBprof=NRB.loc[t]
+            lratprof=panelout.loc['Lidar_Ratio',t]
+            baseprof=panelout.loc['Base',t]
+            topprof=panelout.loc['Top',t]
+            typeprof=panelout.loc['Type',t]
+            backprof=backscatter.loc[t]
+            extprof=extinction.loc[t]
+            a=alts[0]
+            while True:
+                layerbase=baseprof[a]
+                layertop=topprof[a]
+                lrat=lratprof[a]
+                ltype=typeprof[a]
+                lratbelow=lratprof[lratprof.index<layerbase]
+                lratabove=lratprof[lratprof.index>layertop]
+                typebelow=typeprof[typeprof.index<layerbase]
+                typeabove=typeprof[typeprof.index>layertop]
+                if len(lratabove)==0:
+                    break
+                if len(lratbelow)==0:
+                    a=lratabove.index[0]
+                    continue
+                if ltype=='PBL' or ltype=='molecular' or ltype=='unidentified':
+                    a=lratabove.index[0]
+                else:                
+                    if typebelow.iloc[-1]=='molecular' and typeabove.iloc[0]=='molecular':
+                        tempNRB=NRBprof[(NRBprof.index>=layerbase)&(NRBprof.index<=layertop)]
+                        tempback=backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]
+                        tempext=extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]
+                        tempprof=[]
+                        z=[]
+                        for tempalt in lratbelow.index[::-1]:
+                            if typebelow.ix[tempalt]=='molecular':
+                                z.append(tempalt)
+                                tempprof.append(NRBprof.ix[tempalt])
+                            else:
+                                break
+                        molbelow=pan.Series(tempprof[::-1],index=z[::-1])
+                        tempprof=[]
+                        z=[]
+                        for tempalt in lratabove.index:
+                            if typeabove.ix[tempalt]=='molecular':
+                                z.append(tempalt)
+                                tempprof.append(NRBprof.ix[tempalt])
+                            else:
+                                break
+                        molabove=pan.Series(tempprof,index=z)
+                        corkwargs={}
+                        corkwargs['energy']=mplin.header['energy'].ix[t]
+                        corkwargs['method']=method
+                        corkwargs['molbelow']=molbelow
+                        corkwargs['molabove']=molabove
+                        
+                        print "Type is {0} mean signal is {1}".format(ltype,np.mean(tempNRB))
+                        backcor,extcor,lratcor=simplelayercorrection(tempNRB,tempback,tempext,lrat,**corkwargs)
+                        backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]=backcor
+                        extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]=extcor
+                        lratprof[(lratprof.index>=layerbase)&(lratprof.index<=layertop)]=lratcor
+                
+                    a=lratabove.index[0]
+            backscatter.loc[t]=backprof
+            extinction.loc[t]=extprof
+            dflrat.loc[t]=lratprof
+        panelout.loc['Lidar_Ratio']=dflrat
+        
+        mplout.backscatter[1]=backscatter
+        mplout.extinction[1]=extinction
+        mplout.scenepanel[1]=panelout
+        
+    return mplout
 
 def quickplot(df,**kwargs):
     ar=kwargs.get('ar',2.0)
@@ -1440,28 +1832,68 @@ def quickplot(df,**kwargs):
               fsize = fsize, tcolor = 'w')
     fig.canvas.draw()
     
+#def multifile_sceneproc():
+#        os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Processed')
+#        plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Figures'
+#        filepath=mtools.get_files('Select processed file',filetype=('.h5','*.h5'))[0]
+#        filename=os.path.split(filepath)[-1]
+#        plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
+#        timestep='120S'
+#        SNRthreshold=3
+#        layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
+#        scenepanel=scenemaker(layerdict)
+#        mpltemp=layerdict['mpl']
+#        backscatter,extinction=basiccorrection(mpltemp,scenepanel)
+#        mpltemp.backscatter.append(backscatter)
+#        mpltemp.extinction.append(extinction)
+#        
+#        altrange = np.arange(150,15030,30)
+#        starttime = []
+#        endtime = []
+#        timestep = '120S'
+#        hours = ['03','06','09','12','15','18','21']
+#        topplot_limits=(0.0,1e-7,2e-8)
+#        bottomplot_limits=(0.0,2e-7,4e-8)
+#        
+#        kwargs = {'saveplot':True,'showplot':True,'verbose':True,
+#                    'savefilepath':plotfilepath,'savefilename':plotfilename,
+#                    'hours':hours,'bottomplot_limits':bottomplot_limits,'timestep':timestep,
+#                    'topplot_limits':topplot_limits,'SNRmask':False,'altrange':altrange,
+#                    'colormap':'customjet','orientation':'vertical','toptype':'backscatter',
+#                    'bottomtype':'extinction'}
+#        
+#        mplot.doubleplot(mpltemp,**kwargs)    
+#        
+#        layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],
+#                      PBL=layerdict['pbl'],saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
+
+    
 if __name__=='__main__':
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Processed')
-    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Figures'
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data')
+    savefilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data\Processed'
+    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data\Figures'
     filepath=mtools.get_files('Select processed file',filetype=('.h5','*.h5'))[0]
     filename=os.path.split(filepath)[-1]
+    savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])
     plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
     timestep='120S'
-    SNRthreshold=3
-    layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
-    scenepanel=scenemaker(layerdict)
-    mpltemp=layerdict['mpl']
-    backscatter,extinction=basiccorrection(mpltemp,scenepanel)
-    mpltemp.backscatter.append(backscatter)
-    mpltemp.extinction.append(extinction)
+    SNRthreshold=0.1
+    molthresh=0.1
+    layernoisethresh=0.1
+    layerdict=findalllayers(filepath,timestep=timestep,NRBmask=False,molthresh=molthresh,
+                            layernoisethresh=layernoisethresh)
+    mpltemp=scenemaker(layerdict)
+    mpltemp=basiccorrection(mpltemp,inplace=True)
+#    mpltemp.save_to_HDF(savefilename)
+#    mplemp2=sceneoptimize(mpltemp,method='klett2',inplace=False)
     
-    altrange = np.arange(150,15030,30)
+    altrange = np.arange(150,9030,30)
     starttime = []
     endtime = []
     timestep = '120S'
     hours = ['03','06','09','12','15','18','21']
     topplot_limits=(0.0,1e-7,2e-8)
-    bottomplot_limits=(0.0,2e-7,4e-8)
+    bottomplot_limits=(0.0,2e-6,4e-7)
     
     kwargs = {'saveplot':True,'showplot':True,'verbose':True,
                 'savefilepath':plotfilepath,'savefilename':plotfilename,
@@ -1479,7 +1911,7 @@ if __name__=='__main__':
 #    mpl.time_resample(timestep=timestep)
 #    mpl.calc_all()
     
-    #layermaskplot(mpl,fromHDF=True,HDFfile='testmasksall.h5')
+    #layermaskplot(mpltemp,fromHDF=True,HDFfile='testmasksall.h5')
     
 #    mpltest=mtools.MPL()
 #    mpltest.fromHDF(filename)
@@ -1518,7 +1950,7 @@ if __name__=='__main__':
 #    SNRmask = mpltest.SNR['data'][0]>=SNRthreshold
 #    SNRmask.replace(False,np.nan,inplace=True)
 #    
-#    mask,colordict=colormask(mpltest,pbl,molecular,layers)
+#    mask,colordict=colormask_fromdict(mpltest,pbl,molecular,layers)
 #    
 #    hours=['03','06','09','12','15','18','21']
 #    altrange=altrange = np.arange(0,15030,30)

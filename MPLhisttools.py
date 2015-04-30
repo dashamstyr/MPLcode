@@ -194,6 +194,27 @@ def dataextractor(datatype='NRB',**kwargs):
     
     return dfout
 
+def scenefilter(dfin,panelin,**kwargs):
+    filtertype=kwargs.get('filtertype',['aerosol'])
+    filtersubtype=kwargs.get('filtersubtype',[])
+    verbose = kwargs.get('verbose',False)
+    SNRmask=kwargs.get('SNRmask',True)
+    SNRthreshold=kwargs.get('SNRthreshold',1)
+    
+    
+    if filtersubtype:
+        dftemp=panelin.loc['Sub-Type']
+        dffilt=dftemp==filtersubtype
+    else:
+        dftemp=panelin.loc['Type']
+        dffilt=dftemp==filtertype
+    
+    dffilt.replace(False,np.nan,inplace=True)
+    dfout=dfin*dffilt
+    
+    return dfout
+    
+
 def histplot1D(df,**kwargs):
     
     binrange=kwargs.get('binrange',[min(df.min()),max(df.max())])
@@ -452,7 +473,7 @@ if __name__=="__main__":
     
 
     topdir='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA'
-    savefile='histpicle_local.p'
+    savefile='histpickle_local.p'
     os.chdir(topdir)
 #    picklefile=mtools.get_files('Select pickle file to histogram',filetype=('.p','*.p'))[0]
     startdate=datetime.datetime(2013,1,1,00)

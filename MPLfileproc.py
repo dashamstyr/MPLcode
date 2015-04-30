@@ -276,10 +276,10 @@ if __name__ == '__main__':
     import MPLtools as mtools
     
     altrange=range(150,15180,30)
-    timestep='60S'
+    timestep='120S'
     os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
     procdir = mtools.set_dir('Select folder to process files from')
-    fileproc(procdir,doplot=True,saveplot=True,showplot=True,verbose=True,
+    fileproc(procdir,doplot=True,saveplot=True,showplot=True,verbose=True,NRBmask=True,SNRmask=True,
              altrange=altrange,timestep=timestep,NRB_limits=(0.0,1.0,0.2),savetype='standard')
     
 #    plotfile = mtools.get_files('Select File to Plot', filetype = ('.h5', '*.h5'))

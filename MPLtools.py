@@ -95,19 +95,22 @@ class MPL:
             if not self.backscatter:
                 self.backscatter = MPLnew.backscatter
             else:
-                self.backscatter[0] = self.backscatter[0].append(MPLnew.backscatter[0])
+                for n in range(self.header['numchans'][0]):
+                    self.backscatter[n] = self.backscatter[n].append(MPLnew.backscatter[n])
         
         if MPLnew.extinction:
             if not self.extinction:
                 self.extinction = MPLnew.extinction
             else:
-                self.extinction[0] = self.extinction[0].append(MPLnew.extinction[0])
+                for n in range(self.header['numchans'][0]):
+                    self.extinction[n] = self.extinction[n].append(MPLnew.extinction[n])
         
         if MPLnew.scenepanel:
             if not self.scenepanel:
                 self.scenepanel = MPLnew.scenepanel
             else:
-                self.scenepanel[0] = self.scenepanel[0].append(MPLnew.scenepanel[0])
+                for i in self.scenepanel[0].items:
+                    self.scenepanel[0][i] = self.scenepanel[0][i].append(MPLnew.scenepanel[0][i])
         return self
     
     def fromMPL(self, filename):
@@ -293,19 +296,22 @@ class MPL:
                 print "Warning: No Depol Ratio file"
         
         try:
-            self.backscatter=pan.read_hdf(filename,'Backscatter')
+            copoldat_back=pan.read_hdf(filename,'copol_backscatter')
+            crosspoldat_back=pan.read_hdf(filename,'crosspol_backscatter')
+            self.backscatter=[copoldat_back,crosspoldat_back]
         except KeyError:
             if verbose:
                 print "Warning: No Backscatter file"
         
         try:
-            self.extinction=pan.read_hdf(filename,'Extinction')
+            copoldat_ext=pan.read_hdf(filename,'copol_extinction')
+            crosspoldat_ext=pan.read_hdf(filename,'crosspol_extinction')
         except KeyError:
             if verbose:
                 print "Warning: No Extinction file"
         
         try:
-            self.scnepanel=pan.read_hdf(filename,'Scenepanel')
+            self.scnepanel=pan.read_hdf(filename,'scenepanel')
         except KeyError:
             if verbose:
                 print "Warning: No Scene Analysis file"
@@ -320,10 +326,10 @@ class MPL:
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_rsq')
             tempSNR_depol=pan.read_hdf(filename,'SNR_crosspol_rsq')
-            SNRdict['data']=[tempSNR_copol,tempSNR_depol]
+            SNRdict['rsq']=[tempSNR_copol,tempSNR_depol]
         except KeyError:
             if verbose:
-                print "Warning: No SNR-data file"
+                print "Warning: No SNR-rsq  file"
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_NRB')
             tempSNR_depol=pan.read_hdf(filename,'SNR_crosspol_NRB')
@@ -338,14 +344,16 @@ class MPL:
             if verbose:
                 print "Warning: No SNR-depolrat file"
         try:            
-            tempSNR=pan.read_hdf(filename,'SNR_backscatter')
-            SNRdict['backscatter']=[tempSNR]
+            tempSNR_copol=pan.read_hdf(filename,'SNR_copol_backscatter')
+            tempSNR_crosspol=pan.read_hdf(filename,'SNR_crosspol_backscatter')
+            SNRdict['backscatter']=[tempSNR_copol,tempSNR_crosspol]
         except KeyError:
             if verbose:
                 print "Warning: No SNR-backscatter file"
         try:            
-            tempSNR=pan.read_hdf(filename,'SNR_extinction')
-            SNRdict['extinction']=[tempSNR]
+            tempSNR_copol=pan.read_hdf(filename,'SNR_copol_extinction')
+            temp_SNR_crosspol=pan.read_hdf(filename,'SNR_crosspol_extinction')
+            SNRdict['extinction']=[tempSNR_copol,temp_SNR_crosspol]
         except KeyError:
             if verbose:
                 print "Warning: No SNR-extinction file"
@@ -384,17 +392,21 @@ class MPL:
             store['depolrat'] = df_depolrat
         
         if self.backscatter:
-            df_backscatter = self.backscatter[0]
-            store['Backscatter'] = df_backscatter
+            df_backscatter_copol = self.backscatter[0]
+            df_backscatter_crosspol = self.backscatter[1]
+            store['copol_backscatter'] = df_backscatter_copol
+            store['crosspol_backscatter'] = df_backscatter_crosspol
         
         if self.extinction:
-            df_extinction = self.extinction[0]
-            store['Extinction'] = df_extinction
+            df_extinction_copol = self.extinction[0]
+            df_extinction_crosspol = self.extinction[1]
+            store['copol_extinction'] = df_extinction_copol
+            store['crosspol_extinction'] = df_extinction_crosspol
         
         if self.scenepanel:
             scenepanel = self.scenepanel[0]
-            store['Scenepanel'] = scenepanel
-        
+            store['scenepanel'] = scenepanel
+            
         if self.SNR:
             for k,v in self.SNR.iteritems():
                 if len(v)==2:
@@ -492,7 +504,32 @@ class MPL:
                         tempsubgrp.create_dataset('timetag',data=datetime_index)
                         tempsubgrp.create_dataset('altitude',data=df.columns.values)
                         tempsubgrp.create_dataset('values',data=df.values)
-
+            if self.backscatter:
+                df_copol = self.backscatter[0]
+                df_crosspol = self.backscatter[1]
+                tempgrp=f.create_group('Backscatter')
+                tempcopol=tempgrp.create_group('copol')
+                datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                tempcopol.create_dataset('timetag',data=datetime_index)
+                tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                tempcopol.create_dataset('values',data=df_copol.values)
+                tempcrosspol=tempgrp.create_group('crosspol')
+                tempcrosspol.create_dataset('timetag',data=datetime_index)
+                tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                tempcrosspol.create_dataset('values',data=df_crosspol.values)   
+            if self.extinction:
+                df_copol = self.extinction[0]
+                df_crosspol = self.extinction[1]
+                tempgrp=f.create_group('Extinction')
+                tempcopol=tempgrp.create_group('copol')
+                datetime_index=[datetime_to_epoch(d) for d in df_copol.index.values]
+                tempcopol.create_dataset('timetag',data=datetime_index)
+                tempcopol.create_dataset('altitude',data=df_copol.columns.values)
+                tempcopol.create_dataset('values',data=df_copol.values)
+                tempcrosspol=tempgrp.create_group('crosspol')
+                tempcrosspol.create_dataset('timetag',data=datetime_index)
+                tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
+                tempcrosspol.create_dataset('values',data=df_crosspol.values)
     
     def alt_resample(self,altrange,verbose=False):
         #takes a pandas dataframe generated by mplreader and resamples on regular
@@ -540,7 +577,7 @@ class MPL:
 
         if self.backscatter:       
             templist=[]
-            for dftemp in self.backscatter:            
+            for dftemp in self.backscatter:
                 templist.append(resample_cols(dftemp,altrange,verbose))
             self.backscatter=templist
         else:
@@ -549,22 +586,19 @@ class MPL:
 
         if self.extinction:       
             templist=[]
-            for dftemp in self.extinction:            
-                templist.append(resample_cols(dftemp,altrange,verbose))
+            for dftemp in self.extinction:
+                templist.append(resample_cols(dftemp,altrange,verbose))                    
             self.extinction=templist
         else:
             if verbose:
                 print "No Extinction Profiles"
 
         if self.scenepanel:
-            templist=[]
-            for p in self.scenepanel:
-                paneltemp=pan.Panel()
-                for i in p.items:
-                    dftemp = p.loc[i]
-                    paneltemp.loc[i]=resample_cols(dftemp,altrange,verbose)                
-                templist.append(paneltemp)
-            self.scenepanel=tmeplist
+            paneltemp=pan.Panel()
+            for i in self.scenepanel[0].items:
+                dftemp = self.scenepanel[0].loc[i]
+                paneltemp.loc[i]=resample_cols(dftemp,altrange,verbose,method='ffill')                
+            self.scenepanel=[paneltemp]
         else:
             if verbose:
                 print "No Scene Analysis"
@@ -625,7 +659,7 @@ class MPL:
                 dftemp = dftemp.loc[dftemp.index<=endtime]  
             if timestep:
                 dftemp = dftemp.resample(timestep, how = datamethod)
-            tmeplist.append(dftemp)
+            templist.append(dftemp)
         self.data=templist
     
         if self.rsq:
@@ -666,7 +700,7 @@ class MPL:
             
         if self.backscatter:
             templist=[]        
-            for dftemp in self.backscatter:                
+            for dftemp in self.backscatter: 
                 if starttime:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
                 if endtime:
@@ -678,7 +712,7 @@ class MPL:
         
         if self.extinction:
             templist=[]        
-            for dftemp in self.extinction:                
+            for dftemp in self.extinction: 
                 if starttime:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
                 if endtime:
@@ -689,20 +723,17 @@ class MPL:
             self.extinction=templist
         
         if self.scenepanel:
-            templist=[]
-            for p in self.scenepanel:
-                paneltemp=pan.Panel()
-                for i in p.items:
-                    dftemp=p.loc[i]
-                    if starttime:
-                        dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                    if endtime:
-                        dftemp = dftemp.loc[dftemp.index<=endtime]  
-                    if timestep:
-                        dftemp = dftemp.resample(timestep, how = datamethod)
-                    paneltemp.loc[i]=dftemp
-                templist.append(paneltemp)
-            self.scenepanel=templist
+            paneltemp=pan.Panel()
+            for i in self.scenepanel[0].items:
+                dftemp=self.scenepanel[0].loc[i]
+                if starttime:
+                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                if endtime:
+                    dftemp = dftemp.loc[dftemp.index<=endtime]  
+                if timestep:
+                    dftemp = dftemp.resample(timestep, how ='ffill')
+                paneltemp.loc[i]=dftemp
+            self.scenepanel=[paneltemp]
         if verbose:
             print '... Done!'
                 
@@ -776,7 +807,10 @@ class MPL:
                 fig.clf()
                 ax = fig.add_subplot(111)
                 ax.plot(x,y)
-                ax.set_title('Deadtime Correction Curve')
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                ax.set_title('Deadtime Correction Curve',fontsize=30)
+                ax.set_xlabel('Counts [DN]',fontsize=25,labelpad=15)
+                ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
                 plt.show()
             
             
@@ -800,8 +834,13 @@ class MPL:
             if showplots:
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
-                ax.plot(aprange[:100],apvals[:100])
-                ax.set_title('Afterpulse Correction')
+                ax.plot(aprange[:10],apvals[:10])
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                ax.set_title('Afterpulse Correction',fontsize=30)
+                ax.set_xlabel('Altitude [m]', fontsize=25,labelpad=15)
+                ax.set_ylabel('Correction Factor [mJ]', fontsize=25,labelpad=15)
+                ax.set_ylabel()
+                
                 plt.show()
             
             bg = [self.header['bg_avg2'],self.header['bg_avg1']]
@@ -828,7 +867,10 @@ class MPL:
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
                 ax.plot(overrange,overvals)
-                ax.set_title('Overlap Correction')
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                ax.set_title('Overlap Correction',fontsize=30)
+                ax.set_xlabel('Altitude [m]',fontsize=25,labelpad=15)
+                ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
                 plt.show()
                 
             energy = self.header['energy']
@@ -870,7 +912,10 @@ class MPL:
                 fig.clf()
                 ax = fig.add_subplot(111)
                 ax.plot(x,y)
-                ax.set_title('Deadtime Correction Curve')
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                ax.set_title('Deadtime Correction Curve',fontsize=30)
+                ax.set_xlabel('Altitude [m]',fontsize=25,labelpad=15)
+                ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
                 plt.show()
             
             
@@ -919,8 +964,13 @@ class MPL:
             if showplots:
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
-                ax.plot(aprange[:100],apvals[0][:100],aprange[:100],apvals[1][:100])
-                ax.set_title('Afterpulse Correction')
+                ax.plot(aprange[:10],apvals[1][:10],label='Copol Channel')
+                ax.plot(aprange[:10],apvals[0][:10],label='Crosspol Channel')
+                ax.legend()
+                ax.tick_params(axis='both', which='major', labelsize=20)
+                ax.set_title('Afterpulse Correction',fontsize=30)
+                ax.set_xlabel('Altitude [m]', fontsize=25,labelpad=15)
+                ax.set_ylabel('Correction Factor [mJ]', fontsize=25,labelpad=15)
                 plt.show()
             
             bg = [self.header['bg_avg2'],self.header['bg_avg1']]
@@ -949,7 +999,10 @@ class MPL:
             fig = plt.figure()
             ax = fig.add_subplot(111)
             ax.plot(overrange,overvals)
-            ax.set_title('Overlap Correction')
+            ax.tick_params(axis='both', which='major', labelsize=20)
+            ax.set_title('Overlap Correction',fontsize=30)
+            ax.set_xlabel('Altitude [m]',fontsize=25,labelpad=15)
+            ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
             plt.show()
 
         altvals = np.array(MPLout[0].columns, dtype='float')
@@ -1062,7 +1115,7 @@ class MPL:
             
         return self
     
-    def calc_all(self):
+    def calc_all(self,showplots=False):
         """
         calculates all uncalculated fields for an mpl object
         """
@@ -1070,7 +1123,7 @@ class MPL:
             self.range_cor()
         
         if not self.NRB:
-            self.calculate_NRB()
+            self.calculate_NRB(showplots=showplots)
         
         if not self.depolrat:
             self.calculate_depolrat()
@@ -1149,31 +1202,40 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
     root.destroy()
     return result
 
-def resample_cols(dfin,newcols,verbaose=False):
-        oldcols=dfin.columns
+def resample_cols(dfin,newcols,verbose=False,method='interp'):
+    oldcols=dfin.columns
         
-        mincol=oldcols[0]
-        maxcol=oldcols[-1]
+    mincol=oldcols[0]
+    maxcol=oldcols[-1]
+    
+    if mincol>newcols[0]:
+        newcols=newcols[newcols>=mincol]
+        if verbose:
+            print "WARNING: Minimum column value reset to {0}".format(newcols[0])
         
-        if mincol>newcols[0]:
-            newcols=newcols[newcols>=mincol]
-            if verbose:
-                print "WARNING: Minimum column value reset to {0}".format(newcols[0])
-            
-        if maxcol<newcols[-1]:
-            newcols=newcols[newcols<=maxcol]
-            if verbose:
-                print "WARNING: Maximum column value reset to {0}".format(newcols[-1])
+    if maxcol<newcols[-1]:
+        newcols=newcols[newcols<=maxcol]
+        if verbose:
+            print "WARNING: Maximum column value reset to {0}".format(newcols[-1])
                 
-        numrows=len(dfin.index)
-        numcols=len(newcols)    
-        newvalues=np.empty([numrows,numcols])
-        r=0    
-        for row in df.iterrows():
+    newvalues=[]   
+    for row in dfin.iterrows():
+        if method=='interp':
             f=interp1d(oldcols,row[1].values)
-            newvalues[r,:]=f(newcols)
-            r+=1
-        defout=pan.DataFrame(data=newvalues,index=dfin.index,columns=newcols)
+            newvalues.append(f(newcols))
+        elif method=='ffill':
+            newrow=[]
+            for col in newcols:
+                edgeval=row[1].groupby(row[1].index<=col).groups[True][-1]
+                newrow.append(row[1][edgeval])
+            newvalues.append(newrow)    
+        elif method=='bfill':
+            newrow=[]
+            for col in newcols:
+                edgeval=row[1].groupby(row[1].index<=col).groups[False][0]
+                newrow.append(row[1][edgeval])
+            newvalues.append(newrow)            
+    dfout=pan.DataFrame(data=newvalues,index=dfin.index,columns=newcols)
     
     return dfout
         
@@ -1326,6 +1388,7 @@ def MPLtoHDF(filename, appendflag = 'False'):
     store['header'] = df_header
     store.close()
 
+    
 #    def save_to_MPL(self,filename):
 #        #currently not working!
 #        import numpy as np
@@ -1439,9 +1502,7 @@ def MPLtoHDF(filename, appendflag = 'False'):
 #            datavals.tofile(MPLout)
 
 if __name__ == '__main__':
-    
-    import os
-    
+
     olddir = os.getcwd()
     
     os.chdir('C:\\SigmaMPL\DATA')
@@ -1456,13 +1517,13 @@ if __name__ == '__main__':
     
     print 'Import MPL data from .mpl file'
     
-    MPLtest = mtools.MPL()
+    MPLtest = MPL()
     MPLtest.fromMPL(filename)
     
     print 'Done'
     
-    print 'Resample in altitude and time'
+    print 'Calculate all corrections'
 #    
-    
+    MPLtest.calc_all(showplots=True)
     
     os.chdir(olddir)

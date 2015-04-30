@@ -337,7 +337,7 @@ def doubleplot(datafile,**kwargs):
         if SNRmask:
             MPLevent=mproc.SNR_mask_depol(MPLevent)
         bottomtitle='Linear Depolarization Ratio'
-        bottomunits=[]
+        bottomunits=''
         
         
     elif bottomtype=='extinction':
@@ -409,7 +409,30 @@ def doubleplot(datafile,**kwargs):
     
     if verbose:
         print 'Done'
-#    del MPLevent
+
+def doubleprof(prof1,prof2,rangecor=True,deltaplot=True):
+    plotprofs=[]
+    
+    for p in [prof1,prof2]:
+        if rangecor:
+            alts=p.index()
+            plotprofs.append(p*alts**2)
+        else:
+            plotprofs.append(p)
+    
+    if deltaplot:
+        normprofs=[]
+        for p in plotprofs:
+            tempmean=p.mean()
+            normprofs.append(p/tempmean())
+        deltaprof=(nromprofs[1]-normprofs[2])*100.0/normprofs[1]      
+    fig=plt.figure()
+    ax1=fig.add_subplot(211)
+    ax1a=plotprofs[0].plot()
+    ax1b=plotprofs[1].plot(secondary_y=True)
+    mplot.align_yaxis(ax1a,0,ax1b,0)
+    ax2=fig.add_subplot(212)
+    deltaprof.plot()
     
 if __name__=='__main__':       
     altrange = np.arange(150,15030,30)
