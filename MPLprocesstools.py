@@ -12,80 +12,40 @@ from itertools import groupby
 from scipy import signal
 import MPLtools as mtools
 from matplotlib import pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import MPLplot as mplot
 import operator
 import inversiontools as itools
 from scipy import optimize as opt
-from copy import deepcopy
 
-def calc_slope(prof, winsize = 10):
-    
-    """
-    Calculates slope of data for a single profile using a smoothing window of
-    predetermined size
-    
-    inputs:
-    prof:  a pandas series where index is altitude
-    n:  number of consecutive values to average
-    
-    output:
-    slopeout: output series,same size as input,with profile slopes
-    """
-    data = prof.values
-    altrange = np.asarray(prof.index.values,dtype='float')
-    
-    #Step 1: pad dataset to allow averaging
-    
-    leftpad = np.int(np.floor(winsize/2))
-    rightpad = winsize-leftpad
-      
-    #Step 2: Calculate a linear fit to the data in the window
-    
-    slopes = np.empty(len(data)-winsize)
-    for n in range(len(slopes)):       
-        x = altrange[n:n+winsize]
-        y = data[n:n+winsize]
-        
-        coeffs = np.polyfit(x,y,1,full=False)
-        slopes[n] = coeffs[0]
-        
-    
-    slopes = np.pad(slopes,(leftpad,rightpad),'edge')
-    
-    slope_out = pan.Series(slopes, index=altrange)
-    
-    
-    return slope_out
 
-def calc_SNR(prof,bg=[],bg_alt=[]):
 
-    """
-    inputs:
-    prof = a pandas series
-    bg = background signal level (stray light + dark current)
-    bg_alt = altitude above which signal is assumed to be purely background
-             if empty, topmost 100 data points are used1
-    
-    Calculates signal to noise ratios for mpl data
-    """
-        
-    if not bg_alt:
-        bg_alt=prof.index[-200]
-    if not bg:
-        bg = np.mean(prof.ix[bg_alt])
-    
-    SNRprof=pan.Series(np.empty_like(prof.values),index=prof.index)
-    tempvals=[v for v,r in zip(prof.values,prof.index) if r>=bg_alt]
-    tempfilt=[x for x in tempvals if not np.isnan(x)]
-    sigmatemp=np.std(tempfilt)
-    Ctemp=sigmatemp/np.mean(np.sqrt(np.abs(tempfilt)))
-    SNR = lambda x: (x-bg)/(Ctemp*np.sqrt(np.abs(x)))
-        
-    SNRprof[:]=np.array([SNR(v) for v in prof.values]).clip(0)
-        
-    return SNRprof
+#def calc_SNR(prof,bg=[],bg_alt=[]):
+#
+#    """
+#    inputs:
+#    prof = a pandas series
+#    bg = background signal level (stray light + dark current)
+#    bg_alt = altitude above which signal is assumed to be purely background
+#             if empty, topmost 100 data points are used1
+#    
+#    Calculates signal to noise ratios for mpl data
+#    """
+#        
+#    if not bg_alt:
+#        bg_alt=prof.index[-200]
+#    if not bg:
+#        bg = np.mean(prof.ix[bg_alt])
+#    
+#    SNRprof=pan.Series(np.empty_like(prof.values),index=prof.index)
+#    tempvals=[v for v,r in zip(prof.values,prof.index) if r>=bg_alt]
+#    tempfilt=[x for x in tempvals if not np.isnan(x)]
+#    sigmatemp=np.std(tempfilt)
+#    Ctemp=sigmatemp/np.mean(np.sqrt(np.abs(tempfilt)))
+#    SNR = lambda x: (x-bg)/(Ctemp*np.sqrt(np.abs(x)))
+#        
+#    SNRprof[:]=np.array([SNR(v) for v in prof.values]).clip(0)
+#        
+#    return SNRprof
 
 def calc_sigma(prof,bg_alt=[],sigma0=[]):
 
@@ -209,10 +169,10 @@ def SNR_mask_depol(mplin,**kwargs):
     nopassval=kwargs.get('nopassval',float('nan'))
     inplace=kwargs.get('inplace',False)
     recalc=kwargs.get('recalc',False)
-    datatype=kwargs.get('datatype','data')
+    datatype=kwargs.get('datatype','NRB')
     
     if recalc or not mplin.SNR:
-        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=['data'])
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
   
     #start by creating mask where areas that fall below SNRthreshold are zeroed out
     SNRmask = mplin.SNR[datatype][0]>=SNRthreshold
@@ -226,6 +186,32 @@ def SNR_mask_depol(mplin,**kwargs):
         mplout.depolrat[0]=mplin.depolrat[0]*SNRmask
         mplout.depolrat[0].replace(0,nopassval,inplace=True)
     return mplout 
+
+def SNR_mask_colors(mplin,**kwargs):
+    
+    SNRthreshold=kwargs.get('SNRthreshold',3)
+    numprofs=kwargs.get('numprofs',1)
+    bg_alt=kwargs.get('bg_alt',[])
+    nopassval=kwargs.get('nopassval',-9999)
+    inplace=kwargs.get('inplace',False)
+    recalc=kwargs.get('recalc',False)
+    datatype=kwargs.get('datatype','NRB')
+    
+    if recalc or not mplin.SNR:
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
+  
+    #start by creating mask where areas that fall below SNRthreshold are zeroed out
+    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)|(mplin.scenepanel[0]['Type']=='molecular')
+    SNRmask.replace(False,np.nan,inplace=True)
+    if inplace:
+        mplout=mplin
+    else:
+        mplout=deepcopy(mplin)
+           
+    if mplout.scenepanel:        
+        mplout.scenepanel[0]['colormask']=mplin.scenepanel[0]['colormask']*SNRmask
+        mplout.scenepanel[0]['colormask'].replace(np.nan,nopassval,inplace=True)
+    return mplout 
     
 def SNR_mask_all(mplin,**kwargs):
     
@@ -235,7 +221,7 @@ def SNR_mask_all(mplin,**kwargs):
     nopassval=kwargs.get('nopassval',float('nan'))
     inplace=kwargs.get('inplace',False)
     recalc=kwargs.get('recalc',False)
-    datatype=kwargs.get('datatype','data')
+    datatype=kwargs.get('datatype','NRB')
     if recalc or not mplin.SNR:
         mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=['data'])
   
@@ -305,7 +291,6 @@ def NRB_mask_apply(dfin,threshseries,nopassval=float('nan'),inplace=True):
     if inplace:
         dfout=dfin
     else:
-        from copy import deepcopy
         dfout=deepcopy(dfin)
     altvals = dfin.columns.values    
     for r in dfin.index:
@@ -321,6 +306,7 @@ def NRB_mask_all(MPLin,**kwargs):
     
     threshseries=kwargs.get('threshseries',[])
     NRBthreshold=kwargs.get('NRBthreshold',3)
+    NRBmasktype=kwargs.get('NRBmasktype','profile')
     NRBmin=kwargs.get('NRBmin',0.5)
     minalt=kwargs.get('minalt',150)
     numprofs=kwargs.get('numprofs',1)
@@ -331,12 +317,11 @@ def NRB_mask_all(MPLin,**kwargs):
     if inplace:
         MPLout=MPLin
     else:
-        MPLout=MPLin.copy()
+        MPLout=deepcopy(MPLin)
     
     if not any(threshseries):
-        threshkwargs= {'NRBthreshold':NRBthreshold,'NRBmin':NRBmin,'minalt':minalt,
-                       'numprofs':numprofs,'winsize':winsize,'nopassval':nopassval,
-                       'inplace':inplace}
+        threshkwargs= {'NRBthreshold':NRBthreshold,'masktype':NRBmasktype,'NRBmin':NRBmin,'minalt':minalt,
+                       'numprofs':numprofs,'winsize':winsize,'nopassval':nopassval}
         try:
             threshseries=NRB_mask_create(MPLout.NRB[0],**threshkwargs)
         except IndexError:
@@ -350,10 +335,18 @@ def NRB_mask_all(MPLin,**kwargs):
             MPLout.rsq[n]=NRB_mask_apply(MPLout.rsq[n],threshseries)
         if MPLout.NRB:
             MPLout.NRB[n]=NRB_mask_apply(MPLout.NRB[n],threshseries)
-    
+        if MPLout.backscatter:
+            MPLout.backscatter[n]=NRB_mask_apply(MPLout.backscatter[n],threshseries)
+        if MPLout.extinction:
+            MPLout.extinction[n]=NRB_mask_apply(MPLout.extinction[n],threshseries)
+           
     if MPLout.depolrat:
         MPLout.depolrat[0]=NRB_mask_apply(MPLout.depolrat[0],threshseries)
     
+    if MPLout.scenepanel:
+        for i in MPLout.scenepanel[0].items:
+            MPLout.scenepanel[0][i]=NRB_mask_apply(MPLout.scenepanel[0][i],threshseries)
+     
     return MPLout
     
 def slopecalc(prof, winsize = 5):
@@ -438,9 +431,9 @@ def molecular_detect(MPLin,**kwargs):
     savefilename=kwargs.get('savefilename','testmolecular.h5')
     
     
-    MPLin=MPLin.calc_all()    
+    MPLin=MPLin.calc_all()  
     NRBin=MPLin.NRB[0]
-    bg_alt=NRBin.columns.values[-200]
+    bg_alt=NRBin.columns.values[-20]
     #Step 1: calculate molecular profile
     z=NRBin.columns.values
     altstep=z[1]-z[0]  #assumes regular altitude steps throughout
@@ -493,11 +486,9 @@ def molecular_detect_single(tempprof,dataprof,**kwargs):
     wave=kwargs.get('wave',532.0)
     winsize=kwargs.get('winsize',30) 
     varthresh=kwargs.get('varthresh',1)
-    savefile=kwargs.get('savefile',False)
-    savefilename=kwargs.get('savefilename','testmolecular.h5')
     
     
-    bg_alt=tempprof.index.values[-200]
+    bg_alt=tempprof.index.values[-20]
     #Step 1: calculate molecular profile
     z=tempprof.index.values
     altstep=z[1]-z[0]  #assumes regular altitude steps throughout
@@ -539,14 +530,15 @@ def molecular_detect_single(tempprof,dataprof,**kwargs):
                 toppoints.append((layeralt[1],tempprof.ix[layeralt[1]]))
                 n+=1
     
-    
-    fig=plt.figure()
+    numfigs=len(plt.get_fignums())
+    fig=plt.figure(numfigs+1)
     ax1=fig.add_subplot(2,1,1)
     ax1.plot(tempprof.index,tempprof.values)
     ax2=fig.add_subplot(2,1,2)
     ax2.plot(tempprof.index,varthresh*sigmaprof**2,tempprof.index,variance.values)
     ax2.set_ylim([0,max(varthresh*sigmaprof**2)*1.2])
     fig.canvas.draw()
+        
 
 def PBL_detect(MPLin,**kwargs):
     
@@ -556,7 +548,6 @@ def PBL_detect(MPLin,**kwargs):
     widths=kwargs.get('widths',[4])
     layerwidth=kwargs.get('layerwidth',4)
     bg_alt=kwargs.get('bg_alt',[])
-    noisethresh=kwargs.get('noisethresh',3)
     datatype=kwargs.get('datatype','NRB')
     layer_min=kwargs.get('layer_min',[])
     mol_min=kwargs.get('mol_min',[])
@@ -581,7 +572,7 @@ def PBL_detect(MPLin,**kwargs):
         if bg_alt:
             tempsigma0=np.mean(sigmaprof[bg_alt:])
         else:
-            tempsigma0=np.mean(sigmaprof[-200:])
+            tempsigma0=np.mean(sigmaprof[-20:])
             
         tempcwt=signal.cwt(tempprof,wavelet,widths)
         tempmin=maxmin(tempcwt,widths,np.less)
@@ -673,13 +664,19 @@ def find_layers(MPLin,**kwargs):
     
     #if MPLin does not have all necessary processed data,generate it
     wavelet=kwargs.get('wavelet',signal.ricker)
-    widths=kwargs.get('widths',[2])
+    widths=kwargs.get('widths',np.arange(2,5))
     CWTwidth=kwargs.get('CWTwidth',2)
     minwidth=kwargs.get('minwidth',4)
     bg_alt=kwargs.get('bg_alt',[])
     noisethresh=kwargs.get('noisethresh',3)
+    minwidth=kwargs.get('minwidth',4)
+    sigma0=kwargs.get('sigma0',[])
     cloudthresh=kwargs.get('cloudthresh',(1,0.4))
-    datatype=kwargs.get('datatype','data')
+    waterthresh=kwargs.get('waterthresh',0.10)
+    icethresh=kwargs.get('icethresh',0.25)
+    smokethresh=kwargs.get('smokethresh',0.05)
+    dustthresh=kwargs.get('dustthresh',0.15)
+    datatype=kwargs.get('datatype','NRB')
     savefile=kwargs.get('savefile',False)
     savefilename=kwargs.get('savefilename','testlayers.h5')
     
@@ -703,10 +700,13 @@ def find_layers(MPLin,**kwargs):
     for i in rawdata.index:
         tempprof=rawdata.ix[i]
         tempdepolprof=rawdepol.ix[i]
-        tempdepolratprof=rawdepolrat.ix[i]
-        z=tempprof.index
+#        tempdepolratprof=rawdepolrat.ix[i]
+#        z=tempprof.index
         #set baseline noise level based on 
-        tempsigma0=np.mean(calc_sigma(tempprof,bg_alt))
+        if sigma0:
+            tempsigma0=sigma0
+        else:
+            tempsigma0=np.mean(calc_sigma(tempprof,bg_alt))
         
         temp_cwt=signal.cwt(tempprof,wavelet,widths)
         tempmax=maxmin(temp_cwt,widths,np.greater)
@@ -716,7 +716,10 @@ def find_layers(MPLin,**kwargs):
         
         minloc=[minval[1] for minval in tempmin if minval[0]==CWTwidth]
         maxloc=[maxval[1] for maxval in tempmax if maxval[0]==CWTwidth]
-        templayers=layer_filter(tempprof,tempdepolprof,maxloc,minloc,noisethresh,minwidth,sigma0=tempsigma0)
+        filterkwargs={'thresh':noisethresh,'minwidth':minwidth,'sigma0':tempsigma0,
+                      'depolwidths':widths,'depollayerwidth':minwidth,
+                      'depolwavelet':wavelet}
+        templayers=layer_filter(tempprof,tempdepolprof,maxloc,minloc,**filterkwargs)
         
         for n in range(len(templayers)):
             indices=templayers[n]
@@ -727,18 +730,21 @@ def find_layers(MPLin,**kwargs):
             delta=indices[3]
             meandepolrat=indices[4]
             panelname='Layer{0}'.format(n)
-            layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
+#            layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
 #            meandepolrat=np.mean(layerdepolratprof)
             peakval=tempprof.ix[peakalt]
             if peakval >= cloudthresh[0]:
                 layertype='cloud'  
-                layersubtype,layerratio=icewaterfilter(meandepolrat)
+                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                       icethresh=icethresh)    
             elif peakval >= cloudthresh[1] and meandepolrat>0.25:
                 layertype='cloud'  
-                layersubtype,layerratio=icewaterfilter(meandepolrat)
+                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                       icethresh=icethresh)
             else:
                 layertype='aerosol'
-                layersubtype,layerratio=aerosoltypefilter(meandepolrat)
+                layersubtype,layerratio=aerosoltypefilter(meandepolrat,smokethresh=smokethresh,
+                                                          dustthresh=dustthresh)
             panelout.loc[panelname,i,'Base']=minalt
             panelout.loc[panelname,i,'Peak']=peakalt
             panelout.loc[panelname,i,'Top']=maxalt
@@ -754,7 +760,7 @@ def find_layers(MPLin,**kwargs):
         
     return panelout
 
-def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,minwidth=4,sigma0=[]):
+def layer_filter(prof,depolprof,maxiloc,miniloc,**kwargs):
     """
     takes a profile and a list of local maxima and minima from CWT analysis and calculates
     layer edges and peaks while filtering out peaks for which the delta from 
@@ -777,10 +783,16 @@ def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,minwidth=4,sigma0=[]):
              multiple of sigma0 to be counted.  default: 3
     
     """
+    thresh=kwargs.get('thresh',3)
+    minwidth=kwargs.get('minwidth',4)
+    sigma0=kwargs.get('sigma0',[])
+    depolwidths=kwargs.get('depolwidths',np.arange(2,5))
+    depollayerwidth=kwargs.get('depollayerwidth',4)
+    depolwavelet=kwargs.get('depolwavelet',signal.ricker)
     #step 1:calculate noise floor, if not defined
 
     if not sigma0:
-        sigma0=np.mean(calc_sigma(prof)[100:])
+        sigma0=np.mean(calc_sigma(prof)[20:])
     #Step 2: Calculate profile values at each edge and peak
     layers=[]
     n=0
@@ -815,7 +827,9 @@ def layer_filter(prof,depolprof,maxiloc,miniloc,thresh=3,minwidth=4,sigma0=[]):
                     if len(tempprof>=minwidth):
                         tempdepolprof=depolprof.iloc[templowedge:edge_above]
     #                    delta=max(delta_lower,delta_upper)
-                        depol_layers=find_depollayers(tempprof,tempdepolprof,signalsigma0=sigma0)
+                        depolkwargs={'widths':depolwidths,'layerwidth':depollayerwidth,'wavelet':depolwavelet,
+                                     'signalsigma0':sigma0}
+                        depol_layers=find_depollayers(tempprof,tempdepolprof,**depolkwargs)
                         
                         layers+=depol_layers
 #                    layers.append((templowedge,temppeakloc,edge_above,max(delta_lower,delta_upper)))
@@ -925,7 +939,8 @@ def layerprofplot(profin,layersin,numlayer=30):
     
     z=profin.index
     vals=profin.values
-    fig=plt.figure()
+    numfigs=len(plt.get_fignums())
+    fig=plt.figure(numfigs+1)
     ax=fig.add_subplot(111)
     ax.plot(vals,z)
     
@@ -1027,137 +1042,57 @@ def colormask_fromdict(mplin,pblin,molin,layersin):
     
     return mask,colordict
 
-def colormask_plot(maskin,colordict,**kwargs):
-    #set color codes for different layers
-    hours=kwargs.get('hours',['00','06','12','18'])
-    fontsize=kwargs.get('fontsize',24)
-    cbar_ticklocs=kwargs.get('cbarticklocs',np.arange(0,9)+0.5)
-    altrange=kwargs.get('altrange',[])
-    datetimerange=kwargs.get('datetimerange',[])
-    SNRmask=kwargs.get('SNRmask',[])
-    saveplot=kwargs.get('saveplot',True)
-    plotfilepath=kwargs.get('plotfilepath',[])
-    plotfilename=kwargs.get('plotfilename','testmaskfig.png')
-    dpi = kwargs.get('dpi',100)
 
-    cmapdict =  {'red':    ((0.0, 176.0/255.0, 176.0/255.0),
-                            (0.105, 176.0/255.0, 255.0/255.0),
-                            (0.21, 255.0/255.0, 255.0/255.0),
-                            (0.33, 255.0/255.0, 0.0/255.0),
-                            (0.44, 0.0/255.0, 186.0/255.0),
-                            (0.55555, 186.0/255.0, 184.0/255.0),
-                            (0.66666, 184.0/255.0, 0.0/255.0),
-                            (0.77777, 0.0/255.0, 220.0/255.0),
-                            (0.88888, 220.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0)),
-        
-                 'green':  ((0.0, 244.0/255.0, 244.0/255.0),
-                            (0.105, 244.0/255.0, 69.0/255.0),
-                            (0.21, 69.0/255.0, 255.0/255.0),
-                            (0.33, 255.0/255.0, 0.0/255.0),
-                            (0.44, 0.0/255.0, 85.0/255.0),
-                            (0.55555, 85.0/255.0, 134.0/255.0),
-                            (0.66666, 134.0/255.0, 0.0/255.0),
-                            (0.77777, 0.0/255.0, 20.0/255.0),
-                            (0.88888, 20.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0)),
-        
-                 'blue':   ((0.0, 230.0/255.0, 230.0/255.0),
-                            (0.105, 230.0/255.0, 0.0/255.0),
-                            (0.21, 0.0/255.0, 255.0/255.0),
-                            (0.33, 255.0/255.0, 205.0/255.0),
-                            (0.44, 205.0/255.0, 211.0/255.0),
-                            (0.55555, 211.0/255.0, 11.0/255.0),
-                            (0.66666, 11.0/255.0, 0.0/255.0),
-                            (0.77777, 0.0/255.0, 60.0/255.0),
-                            (0.88888, 60.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0))}    
-                   
-    maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
     
-    if altrange:
-        maskin=maskin.loc[:,(maskin.columns>altrange[0]) & (maskin.columns<altrange[1])]
-    
-    if datetimerange:
-        maskin=maskin[(maskin.index>datetimerange[0]) & (maskin.index<datetimerange[1])]
-    
-    datetime=maskin.index
-    alts=maskin.columns
-    
-    if isinstance(SNRmask,pan.DataFrame):
-        if altrange:
-            SNRmask=SNRmask.loc[:,(SNRmask.columns>altrange[0]) & (SNRmask.columns<altrange[1])]
-    
-        if datetimerange:
-            SNRmask=SNRmask[(SNRmask.index>datetimerange[0]) & (SNRmask.index<datetimerange[1])]
-        
-        maskin=maskin*SNRmask
-        maskin.fillna(8,inplace=True)
-    
-    fig=plt.figure()
-    ax1=plt.subplot2grid((37,60),(0,0),rowspan=30,colspan=60)
-    cax=plt.subplot2grid((37,60),(30,0),rowspan=7,colspan=60)    
-    image=ax1.imshow(maskin.T[::-1],cmap=maskmap,interpolation='none',vmin=0,vmax=9,aspect='auto')
-    plt.tight_layout()
-#    mplot.forceAspect(ax1,aspect=ar)
-    mplot.dateticks(ax1, datetime, hours = hours,fsize=fontsize)
-    ax1.set_xlabel('Hours [Local]',fontsize=fontsize+4)
-    ax1.set_ylabel('Altitude [m]', fontsize=fontsize+4)
-    mplot.altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
-#    divider = make_axes_locatable(ax)
-#    cax = divider.append_axes("bottom", size="10%", pad=0.15)
-    cbar1=fig.colorbar(image,cax=cax,orientation='horizontal')
-#    cbar1.ax.set_autoscalex_on(False)
-    cbar1.set_ticks(cbar_ticklocs)
-    cbar1.ax.tick_params(bottom='off',top='off',labelsize=fontsize-4)
-    
-    sortedlabels=[s[0] for s in sorted(colordict.iteritems(), key=operator.itemgetter(1))]
-    cbarlabels=cbar1.set_ticklabels(sortedlabels)
-    
-    if saveplot:
-        if plotfilepath:
-            if os.path.isdir(plotfilepath):
-                savename=os.path.join(plotfilepath,plotfilename)
-            else:
-                os.mkdir(plotfilepath)
-                savename=os.path.join(plotfilepath,plotfilename)
-        fig.canvas.print_figure(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
-    fig.canvas.draw()
-    
-def findalllayers(filename,**kwargs):    
+def findalllayers(**kwargs):
+    mplin=kwargs.get('mplin',[])
+    filename=kwargs.get('filename',[])
     timestep=kwargs.get('timestep','240S')
-    maxalt=kwargs.get('maxalt',[])
-    NRBmask=kwargs.get('NRBmask',True)
-    NRBthresh=kwargs.get('NRBthresh',3)
+    bg_alt=kwargs.get('bg_alt',[])
+    datatype=kwargs.get('datatype','NRB')
     molthresh=kwargs.get('molthresh',1)
-    molwinsize=kwargs.get('molwinsize',5)
-    layernoisethresh=kwargs.get('layernoisethresh',0.4)
+    winsize=kwargs.get('winsize',5)
+    wavelet=kwargs.get('wavelet',signal.ricker)
+    noisethresh=kwargs.get('noisethresh',0.4)
     cloudthresh=kwargs.get('cloudthresh',(1.0,0.20))
-    layerdtype=kwargs.get('layerdtype','NRB')
     CWTwidth=kwargs.get('CWTwidth',2)
-    layerminwidth=kwargs.get('minwidth',4)
+    minwidth=kwargs.get('minwidth',4)
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
+    PBLwavelet=kwargs.get('PBLwavelet',dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
-    savemasks=kwargs.get('savemasks',True)
+    savemasks=kwargs.get('savemasks',False)
     savemaskname=kwargs.get('savemaskname','testmasksall.h5')
+    sigma0=kwargs.get('sigma0',[])
+    waterthresh=kwargs.get('waterthresh',0.10)
+    icethresh=kwargs.get('icethresh',0.25)
+    smokethresh=kwargs.get('smokethresh',0.05)
+    dustthresh=kwargs.get('dustthresh',0.15)
     
-    mpltest = mtools.MPL()
-    mpltest.fromHDF(filename)
-    mpltest.time_resample(timestep=timestep)
-    mpltest.calc_all()     
-    if NRBmask:
-        mpltest=NRB_mask_all(mpltest,NRBthreshold=NRBthresh)   
+    if filename:
+        mplin = mtools.MPL()
+        mplin.fromHDF(filename)
     
-    molecular=molecular_detect(mpltest,varthresh=molthresh, winsize=molwinsize) 
-    layers=find_layers(mpltest,noisethresh=layernoisethresh,cloudthresh=cloudthresh,
-                       datatype=layerdtype,CWTwidth=CWTwidth,widths=layerCWTrange,
-                       minwidth=layerminwidth)        
+    mplin.time_resample(timestep=timestep)
+    mplin.calc_all()     
+    
+    molecular=molecular_detect(mplin,varthresh=molthresh, winsize=winsize)
+    
+    layerkwargs = {'wavelet':wavelet,'noisethresh':noisethresh,
+                   'cloudthresh':cloudthresh,'datatype':datatype,'CWTwidth':CWTwidth,
+                   'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,
+                   'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
+                   'dustthresh':dustthresh,'sigma0':sigma0}
+    layers=find_layers(mplin,**layerkwargs)  
     mol_min=molecular.loc['Layer0']
     try:
         layer_min=layers.loc['Layer0']
     except KeyError:
-        layer_min=mpltest.NRB[0].columns[-1]
-    pbl=PBL_detect(mpltest,mol_min=mol_min,layer_min=layer_min,widths=PBLCWTrange)
+        layer_min=mplin.NRB[0].columns[-1]
+        
+    PBLkwargs = {'wavelet':PBLwavelet,'mol_min':mol_min,'layer_min':layer_min,
+                 'widths':PBLCWTrange,'layerwidth':minwidth,'bg_alt':bg_alt,
+                 'datatype':datatype}
+    pbl=PBL_detect(mplin,**PBLkwargs)
     
     if savemasks:    
         store=pan.HDFStore(savemaskname)
@@ -1166,40 +1101,41 @@ def findalllayers(filename,**kwargs):
         store['PBL']=pbl
         store.close()
     
-    dictout={'mpl':mpltest,'molecular':molecular,'layers':layers,'pbl':pbl}
+    dictout={'mpl':mplin,'molecular':molecular,'layers':layers,'pbl':pbl}
     return dictout   
     
-def layermaskplot(mpl,**kwargs):
-    fromHDF=kwargs.get('fromHDF',False)
-    if fromHDF:
-        HDFfile=kwargs.get('HDFfile',[])
-        molecular=pan.read_hdf(HDFfile,'molecular')
-        layers=pan.read_hdf(HDFfile,'layers')
-        PBL=pan.read_hdf(HDFfile,'PBL')
-    else:
-        molecular=kwargs.get('molecular',[])
-        layers=kwargs.get('layers',[])
-        PBL=kwargs.get('PBL',[])
-    SNRmask=kwargs.get('SNRmask',True)    
-    SNRmasktype=kwargs.get('SNRmasktype','NRB')
-    SNRthresh=kwargs.get('SNRthresh',1)
-    hours=kwargs.get('hours',['03','06','09','12','15','18','21'])
-    altrange=kwargs.get('altrange',np.arange(0,15030,30))
-    saveplot=kwargs.get('saveplot',True)    
-    plotfilepath=kwargs.get('plotfilepath',[])
-    plotfilename=kwargs.get('plotfilename','testmaskplot.png')
-    
-    
-    if SNRmask:
-        MPLmasked = mpl.SNR[SNRmasktype][0]>=SNRthresh
-        MPLmasked.replace(False,np.nan,inplace=True)
-    
-    mask,colordict=colormask_fromdict(mpl,PBL,molecular,layers)
-    minalt=altrange[0]
-    maxalt=altrange[-1]
-    kwargs={'hours':hours,'altrange':(minalt,maxalt),'SNRmask':SNRmask,'saveplot':saveplot,
-            'plotfilepath':plotfilepath,'plotfilename':plotfilename}
-    colormask_plot(mask,colordict,**kwargs)
+#def layermaskplot(mplin,**kwargs):        
+#    hours=kwargs.get('hours',['00','06','12','18'])
+#    altrange=kwargs.get('altrange',np.arange(0,15030,30))
+#    saveplot=kwargs.get('saveplot',True)    
+#    plotfilepath=kwargs.get('plotfilepath',[])
+#    plotfilename=kwargs.get('plotfilename','testmaskplot.png')
+#    fontsize=kwargs.get('fontsize',24)
+#    cbar_ticklocs=kwargs.get('cbarticklocs',np.arange(0,9)+0.5)
+#    datetimerange=kwargs.get('datetimerange',[])
+#    SNRmask=kwargs.get('SNRmask',[])
+#    saveplot=kwargs.get('saveplot',True)
+#    showplot=kwargs.get('showplot',True)
+#    plotfilepath=kwargs.get('plotfilepath',[])
+#    plotfilename=kwargs.get('plotfilename','testmaskfig.png')
+#    dpi = kwargs.get('dpi',100)    
+#    colordict=kwargs.get('colordict',{'molecular':0,
+#                                       'PBL':1,
+#                                       'ice':2,
+#                                       'water':3,
+#                                       'mixed':4,
+#                                       'dust':5,
+#                                       'smoke':6,
+#                                       'water_soluble':7,
+#                                       'unidentified':8})
+#    
+#    minalt=altrange[0]
+#    maxalt=altrange[-1]
+#    kwargs={'hours':hours,'altrange':(minalt,maxalt),'saveplot':saveplot,
+#            'plotfilepath':plotfilepath,'plotfilename':plotfilename}
+#            
+#    colormask=mplin.scenepanel[0]['colormask']
+#    colormask_plot(colormask,hours=hours,altrange=altrange,**kwargs)
 
 def scenemaker(layerdict,**kwargs):
     """
@@ -1322,15 +1258,15 @@ def scenemaker(layerdict,**kwargs):
                         layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
                         colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['unidentified']
                         
-    typemask.fillna(method='ffill',inplace=True)
-    subtypemask.fillna(method='ffill',inplace=True) 
-    lrat.fillna(method='ffill',inplace=True)
-    depolrat.fillna(method='ffill',inplace=True)
-    layerbase.fillna(method='ffill',inplace=True)
-    layertop.fillna(method='ffill',inplace=True)
-    colormask.fillna(method='ffill',inplace=True)
+    typemask.fillna(method='ffill',axis=1,inplace=True)
+    subtypemask.fillna(method='ffill',axis=1,inplace=True) 
+    lrat.fillna(method='ffill',axis=1,inplace=True)
+    depolrat.fillna(method='ffill',axis=1,inplace=True)
+    layerbase.fillna(method='ffill',axis=1,inplace=True)
+    layertop.fillna(method='ffill',axis=1,inplace=True)
+    colormask.fillna(method='ffill',axis=1,inplace=True)
     paneldict={'Type':typemask,'Sub-Type':subtypemask,'Lidar_Ratio':lrat,'Depol':depolrat,
-               'Delta':delta,'Base':layerbase,'Top':layertop,'Color':colormask}
+               'Delta':delta,'Base':layerbase,'Top':layertop,'colormask':colormask}
     panelout=pan.Panel.from_dict(paneldict)
     
     mpl.scenepanel=[panelout]
@@ -1398,33 +1334,37 @@ def Tfrombounds(molbelow,molabove,wave=532.0):
 
 def coefprofs(profin,lratprof,**kwargs):
     method=kwargs.get('method','klett2')
-    refalt=kwargs.get('refalt',[])
+    refalt=kwargs.get('refalt',profin.index[-1])
     energy=kwargs.get('energy',1.0)
     calrange=kwargs.get('calrange',[])
     wave=kwargs.get('wave',532.0)
     
-    if np.all(np.isnan(profin)):
+    if pan.isnull(profin).all():
         backprof=pan.Series(0,index=profin.index)
         extprof=backprof
-    else:    
+    else:
+        gtemp=pan.groupby(profin,pan.isnull(profin))
+        limalt=gtemp.groups[False][-1]
+        if limalt<refalt:
+            refalt=limalt
         if method=='fernald':
             if not calrange:
-                calrange=[profin.index.values[-20],profin.index.values[-1]]
+                mincalalt=profin.index.values[:refalt][-20]
+                calrange=[mincalalt,refalt]
             lratin=np.mean(lratprof)
             backprof,extprof=itools.fernald(profin,lratin,E=energy,calrange=calrange)
         elif method=='klett':
-            if not refalt:
-                refalt=profin.index[-1]
-            refext=itools.molprof([refalt],wave).loc['sigma_t'].values[0]
+            refext=itools.molprof(profin.index[:refalt],wave)['sigma_t'].values[-1]
             backprof,extprof=itools.klett(profin,lratprof,r_m=refalt,sigma_m=refext)
         elif method=='klett2':
-            lratin=np.mean(lratprof)
-            backprof,extprof=itools.klett2(profin,lratprof)
+            refbeta=itools.molprof(profin.index[:refalt],wave)['beta_t'].values[-1]
+            backprof,extprof=itools.klett2(profin,lratprof,r_m=refalt,beta_m=refbeta)
     return backprof,extprof
     
 def basiccorrection(mpl,**kwargs):    
     wave=kwargs.get('wave',532.0)
     refalt=kwargs.get('refalt',[])
+    calrange=kwargs.get('calrange',[])
     method=kwargs.get('method','klett2')
     lrat=kwargs.get('lrat',[])
     mode=kwargs.get('mode','copol')
@@ -1443,10 +1383,11 @@ def basiccorrection(mpl,**kwargs):
         for t in times:
             tempprof=NRB.ix[t]
             if not refalt:
-                for a in alts[::-1]:
-                    if not np.isnan(tempprof.ix[a]):
-                        refalt=a
-                        break
+                refalt=tempprof.index.values[-1]
+                gtemp=pan.groupby(tempprof,pan.isnull(tempprof))
+                limalt=gtemp.groups[False][-1]
+                if limalt<refalt:
+                    refalt=limalt
             if lrat:
                 templrat=pan.Series(data=lrat,index=alts)
             else:
@@ -1456,7 +1397,7 @@ def basiccorrection(mpl,**kwargs):
             coefkwargs['refalt']=refalt
             coefkwargs['method']=method
             coefkwargs['energy']=mpl.header['energy'].ix[t]
-            coefkwargs['calrange']=[a-100,a]
+            coefkwargs['calrange']=calrange
             tempbeta,tempsigma=coefprofs(tempprof,templrat,**coefkwargs)
             backscatter_copol.ix[t]=tempbeta
             extinction_copol.ix[t]=tempsigma
@@ -1802,7 +1743,8 @@ def quickplot(df,**kwargs):
     undercolor=kwargs.get('undercolor','k')
     numvals=kwargs.get('numvals',50)
     
-    fig=plt.figure()
+    numfigs=len(plt.get_fignums())
+    fig=plt.figure(numfigs+1)
     ax=fig.add_subplot(111)    
     data=df.values.T[::-1]
     xdata=df.index
@@ -1832,40 +1774,6 @@ def quickplot(df,**kwargs):
               fsize = fsize, tcolor = 'w')
     fig.canvas.draw()
     
-#def multifile_sceneproc():
-#        os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Processed')
-#        plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\UBC Cross-Cal\\20131014-20131016\\10-15\Figures'
-#        filepath=mtools.get_files('Select processed file',filetype=('.h5','*.h5'))[0]
-#        filename=os.path.split(filepath)[-1]
-#        plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
-#        timestep='120S'
-#        SNRthreshold=3
-#        layerdict=findalllayers(filename,timestep=timestep,NRBmask=False)
-#        scenepanel=scenemaker(layerdict)
-#        mpltemp=layerdict['mpl']
-#        backscatter,extinction=basiccorrection(mpltemp,scenepanel)
-#        mpltemp.backscatter.append(backscatter)
-#        mpltemp.extinction.append(extinction)
-#        
-#        altrange = np.arange(150,15030,30)
-#        starttime = []
-#        endtime = []
-#        timestep = '120S'
-#        hours = ['03','06','09','12','15','18','21']
-#        topplot_limits=(0.0,1e-7,2e-8)
-#        bottomplot_limits=(0.0,2e-7,4e-8)
-#        
-#        kwargs = {'saveplot':True,'showplot':True,'verbose':True,
-#                    'savefilepath':plotfilepath,'savefilename':plotfilename,
-#                    'hours':hours,'bottomplot_limits':bottomplot_limits,'timestep':timestep,
-#                    'topplot_limits':topplot_limits,'SNRmask':False,'altrange':altrange,
-#                    'colormap':'customjet','orientation':'vertical','toptype':'backscatter',
-#                    'bottomtype':'extinction'}
-#        
-#        mplot.doubleplot(mpltemp,**kwargs)    
-#        
-#        layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],
-#                      PBL=layerdict['pbl'],saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
 
     
 if __name__=='__main__':
@@ -1880,10 +1788,10 @@ if __name__=='__main__':
     SNRthreshold=0.1
     molthresh=0.1
     layernoisethresh=0.1
-    layerdict=findalllayers(filepath,timestep=timestep,NRBmask=False,molthresh=molthresh,
+    layerdict=findalllayers(filename=filepath,timestep=timestep,molthresh=molthresh,
                             layernoisethresh=layernoisethresh)
     mpltemp=scenemaker(layerdict)
-    mpltemp=basiccorrection(mpltemp,inplace=True)
+#    mpltemp=basiccorrection(mpltemp,inplace=True)
 #    mpltemp.save_to_HDF(savefilename)
 #    mplemp2=sceneoptimize(mpltemp,method='klett2',inplace=False)
     
@@ -1904,8 +1812,7 @@ if __name__=='__main__':
     
     mplot.doubleplot(mpltemp,**kwargs)    
     
-    layermaskplot(mpl=layerdict['mpl'],molecular=layerdict['molecular'],layers=layerdict['layers'],
-                  PBL=layerdict['pbl'],saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
+    mplot.colormask_plot(mpltemp,saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
 #    mpl=mtools.MPL()
 #    mpl.fromHDF(filename)
 #    mpl.time_resample(timestep=timestep)
@@ -1956,7 +1863,7 @@ if __name__=='__main__':
 #    altrange=altrange = np.arange(0,15030,30)
 #    minalt=altrange[0]
 #    maxalt=altrange[-1]
-#    colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
+#    mplot.colormask_plot(mask,colordict,hours=hours,altrange=(minalt,maxalt),SNRmask=SNRmask)
 #    
 ##    mpltest.alt_resample(altrange)
 ##    mpltest.calc_all() 

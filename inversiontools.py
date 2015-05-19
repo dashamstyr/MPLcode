@@ -170,8 +170,8 @@ def molprof(z,wave=532.0,T0=1.0,E0=1.0,C=1.0):
         P_z.loc[alt] = (E0*C*beta_R.loc[alt]*T_total)*(alt/1000.0)**-2.0
         oldalt=alt
         
-    rsq = P_z*(z/1000.0)**2.0
-    NRB = rsq/E0
+    rsq = [val*(alt/1000.0)**2.0 for val,alt in zip(P_z,z)]
+    NRB = [val/E0 for val in rsq]
         
     
     beta_t = beta_R+beta_p
@@ -544,35 +544,43 @@ def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = []):
             below = [z for z in altitudes if z <= minalt]
             
             for alt in reversed(below):
-                X1 = P_in.loc[oldalt]*E
-                X0 = P_in.loc[alt]*E
-                beta_R1 = Rayleigh_coeffs['beta_R'].loc[oldalt]
-                beta_R0 = Rayleigh_coeffs['beta_R'].loc[alt]
-                delta_Z = oldalt-alt
-                A = (lrat-Rayleigh_lrat)*(beta_R1+beta_R0)*delta_Z
-                
-                beta_total.loc[alt] = X0*np.exp(A)/((X1/beta_total[oldalt])+lrat* \
-                np.abs(X1+X0*np.exp(A))*delta_Z)
-                
-                oldalt = alt
+                if np.isnan(P_in.loc[alt]):
+                    beta_total.loc[:alt]=np.nan
+                    break
+                else:
+                    X1 = P_in.loc[oldalt]*E
+                    X0 = P_in.loc[alt]*E
+                    beta_R1 = Rayleigh_coeffs['beta_R'].loc[oldalt]
+                    beta_R0 = Rayleigh_coeffs['beta_R'].loc[alt]
+                    delta_Z = oldalt-alt
+                    A = (lrat-Rayleigh_lrat)*(beta_R1+beta_R0)*delta_Z
+                    
+                    beta_total.loc[alt] = X0*np.exp(A)/((X1/beta_total[oldalt])+lrat* \
+                    np.abs(X1+X0*np.exp(A))*delta_Z)
+                    
+                    oldalt = alt
         
         #then  calculate for altitudes above maxalt
-        elif calalts[-1] < altitudes[-1]:
+        if calalts[-1] < altitudes[-1]:
             oldalt = calalts[-1]
             above = [z for z in altitudes if z >= maxalt]
             
             for alt in above:
-                X1 = P_in.loc[oldalt]*E
-                X0 = P_in.loc[alt]*E
-                beta_R1 = Rayleigh_coeffs['beta_R'].loc[oldalt]
-                beta_R0 = Rayleigh_coeffs['beta_R'].loc[alt]
-                delta_Z = oldalt-alt
-                A = (lrat-Rayleigh_lrat)*(beta_R1+beta_R0)*delta_Z
-                
-                beta_total.loc[alt] = X0*np.exp(-A)/((X1/beta_total[oldalt])-lrat* \
-                np.abs(X1+X0*np.exp(-A))*delta_Z)
-                
-                oldalt = alt
+                if np.isnan(P_in.loc[alt]):
+                    beta_total.loc[alt:]=np.nan
+                    break
+                else:
+                    X1 = P_in.loc[oldalt]*E
+                    X0 = P_in.loc[alt]*E
+                    beta_R1 = Rayleigh_coeffs['beta_R'].loc[oldalt]
+                    beta_R0 = Rayleigh_coeffs['beta_R'].loc[alt]
+                    delta_Z = oldalt-alt
+                    A = (lrat-Rayleigh_lrat)*(beta_R1+beta_R0)*delta_Z
+                    
+                    beta_total.loc[alt] = X0*np.exp(-A)/((X1/beta_total[oldalt])-lrat* \
+                    np.abs(X1+X0*np.exp(-A))*delta_Z)
+                    
+                    oldalt = alt
         
     sigma_total=beta_total*lrat
     
@@ -892,7 +900,7 @@ if __name__ == '__main__':
     z = np.arange(150,15000,3,dtype='float')
     E0=1.0 
     background = 1e-6
-    noise=1e-8
+    noise=0.0
     beta_list=[1.0*10**-exp for exp in range(0,8)]
     alt_list=np.arange(750.0,13750.0,500.0)
     lrat_list=np.arange(15.0,80.0,5.0)

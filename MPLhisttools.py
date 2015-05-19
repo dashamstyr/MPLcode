@@ -160,6 +160,10 @@ def dataextractor(datatype='NRB',**kwargs):
                 tempdf=MPLfile.SNR['NRB'][0]
             elif datatype=='DepolSNR':
                 tempdf=MPLfile.SNR['depolrat'][0]
+            elif datatype=='LayerType':
+                tempdf=MPLfile.scenepanel[0]['Type']
+            elif datatype=='LayerSubtype':
+                tempdf=MPLfile.scenepanel[0]['Sub-Type']
             dflist.append(tempdf)
         
         dfout=pan.concat(dflist)
@@ -180,6 +184,10 @@ def dataextractor(datatype='NRB',**kwargs):
                 tempdf=MPLfile.SNR['NRB'][0]
             elif datatype=='DepolSNR':
                 tempdf=MPLfile.SNR['depolrat'][0]
+            elif datatype=='LayerType':
+                tempdf=MPLfile.scenepanel[0]['Type']
+            elif datatype=='LayerSubtype':
+                tempdf=MPLfile.scenepanel[0]['Sub-Type']
             dflist.append(tempdf)
         
         dfout=pan.concat(dflist)
@@ -198,10 +206,13 @@ def scenefilter(dfin,panelin,**kwargs):
     filtertype=kwargs.get('filtertype',['aerosol'])
     filtersubtype=kwargs.get('filtersubtype',[])
     verbose = kwargs.get('verbose',False)
-    SNRmask=kwargs.get('SNRmask',True)
-    SNRthreshold=kwargs.get('SNRthreshold',1)
+    inplace=kwargs.get('inplace',True)
     
-    
+    if inplace:
+        dfout=dfin
+    else:
+        dfout=deepcopy(dfin)
+        
     if filtersubtype:
         dftemp=panelin.loc['Sub-Type']
         dffilt=dftemp==filtersubtype
@@ -210,8 +221,8 @@ def scenefilter(dfin,panelin,**kwargs):
         dffilt=dftemp==filtertype
     
     dffilt.replace(False,np.nan,inplace=True)
-    dfout=dfin*dffilt
-    
+    dfout=dfout*dffilt
+        
     return dfout
     
 

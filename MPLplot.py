@@ -8,7 +8,10 @@ import matplotlib.colors as colors
 import pandas as pan
 import MPLtools as mtools
 import MPLprocesstools as mproc
-from datetime import datetime
+from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import operator
+from copy import deepcopy
 
 def custom_cmap(maptype,numvals,overcolor,undercolor):
     if maptype=="customjet":
@@ -175,8 +178,8 @@ def vertprof(df, altrange, exact_times, plot_type = 'line', zeromask = False,
         i = bisect.bisect_left(daterange, ts)
         approx_times.append(min(daterange[max(0, i-1): i+2], key=lambda t: abs(ts - t)))
     
-    plt.clf()
-    fig = plt.figure()
+    numfigs=len(plt.get_fignums())
+    fig = plt.figure(numfigs+1)
     
     numprof = len(approx_times)
     
@@ -284,7 +287,7 @@ def doubleplot(datafile,**kwargs):
     toptype=kwargs.get('toptype','NRB')
     bottomtype=kwargs.get('bottomtype','depol')
     
-    if type(datafile)==str:
+    if type(datafile)in [str,unicode]:
         savefilename = kwargs.get('savefilename','{0}.png'.format(datafile.split('.')[0]))
     else:
         savefilename = kwargs.get('savefilename','MPLdoubleplot.png')
@@ -292,7 +295,8 @@ def doubleplot(datafile,**kwargs):
     showplot = kwargs.get('showplot',False)
     verbose = kwargs.get('verbose',False)
     SNRmask = kwargs.get('SNRmask',False)
-    SNRthresh = kwargs.get('SNRthresh',3) 
+    SNRthresh = kwargs.get('SNRthresh',3)
+    SNRtype = kwargs.get('SNRtype','NRB')
     
     topplot_min = topplot_limits[0]
     topplot_max = topplot_limits[1]
@@ -308,8 +312,6 @@ def doubleplot(datafile,**kwargs):
         MPLevent.fromHDF(datafile)    
     else:
         MPLevent = datafile
-
-    
         
     if len(altrange)>0:
         MPLevent.alt_resample(altrange)    
@@ -332,10 +334,11 @@ def doubleplot(datafile,**kwargs):
     if bottomtype=='depol':
         if not MPLevent.depolrat:
             MPLevent.calculate_depolrat()
-        bottomdat = MPLevent.depolrat[0]
-        
         if SNRmask:
-            MPLevent=mproc.SNR_mask_depol(MPLevent)
+            MPLevent_masked=mproc.SNR_mask_depol(MPLevent,SNRthreshold=SNRthresh)
+            bottomdat = MPLevent_masked.depolrat[0]
+        else:
+            bottomdat = MPLevent.depolrat[0]
         bottomtitle='Linear Depolarization Ratio'
         bottomunits=''
         
@@ -353,8 +356,9 @@ def doubleplot(datafile,**kwargs):
     #create figure and plot image of depolarization ratios    
     plt.rc('font', family='serif', size=fsize)
     
+    numfigs=len(plt.get_fignums())
     
-    fig = plt.figure(0)
+    fig = plt.figure(numfigs+1)
     
     h_set = range(1,25)
     h_set = map(str,h_set)
@@ -425,14 +429,127 @@ def doubleprof(prof1,prof2,rangecor=True,deltaplot=True):
         for p in plotprofs:
             tempmean=p.mean()
             normprofs.append(p/tempmean())
-        deltaprof=(nromprofs[1]-normprofs[2])*100.0/normprofs[1]      
-    fig=plt.figure()
+        deltaprof=(nromprofs[1]-normprofs[2])*100.0/normprofs[1] 
+    
+    numfigs=len(plt.get_fignums())
+    fig=plt.figure(numfigs+1)
     ax1=fig.add_subplot(211)
     ax1a=plotprofs[0].plot()
     ax1b=plotprofs[1].plot(secondary_y=True)
     mplot.align_yaxis(ax1a,0,ax1b,0)
     ax2=fig.add_subplot(212)
     deltaprof.plot()
+
+def colormask_plot(mplin,**kwargs):
+    #set color codes for different layers
+    hours=kwargs.get('hours',['00','06','12','18'])
+    fontsize=kwargs.get('fontsize',24)
+    cbar_ticklocs=kwargs.get('cbarticklocs',np.arange(0,9)+0.5)
+    altrange=kwargs.get('altrange',[])
+    datetimerange=kwargs.get('datetimerange',[])
+    SNRmask=kwargs.get('SNRmask',False)
+    SNRthresh=kwargs.get('SNRthresh',3.0)
+    SNRtype=kwargs.get('SNRtype','NRB')
+    saveplot=kwargs.get('saveplot',True)
+    showplot=kwargs.get('showplot',True)
+    plotfilepath=kwargs.get('plotfilepath',[])
+    plotfilename=kwargs.get('plotfilename','testmaskfig.png')
+    dpi = kwargs.get('dpi',100)    
+    colordict=kwargs.get('colordict',{'molecular':0,
+                                       'PBL':1,
+                                       'ice':2,
+                                       'water':3,
+                                       'mixed':4,
+                                       'dust':5,
+                                       'smoke':6,
+                                       'water_soluble':7,
+                                       'unidentified':8})
+
+    cmapdict =  {'red':    ((0.0, 176.0/255.0, 176.0/255.0),
+                            (0.1, 176.0/255.0, 255.0/255.0),
+                            (0.2, 255.0/255.0, 255.0/255.0),
+                            (0.33333, 255.0/255.0, 0.0/255.0),
+                            (0.44444, 0.0/255.0, 186.0/255.0),
+                            (0.55555, 186.0/255.0, 184.0/255.0),
+                            (0.66666, 184.0/255.0, 75.0/255.0),
+                            (0.77777, 75.0/255.0, 220.0/255.0),
+                            (0.88888, 220.0/255.0, 192.0/255.0),
+                            (1.0, 192.0/255.0, 192.0/255.0)),
+        
+                 'green':  ((0.0, 244.0/255.0, 244.0/255.0),
+                            (0.1, 244.0/255.0, 69.0/255.0),
+                            (0.2, 69.0/255.0, 255.0/255.0),
+                            (0.33333, 255.0/255.0, 0.0/255.0),
+                            (0.44444, 0.0/255.0, 85.0/255.0),
+                            (0.55555, 85.0/255.0, 134.0/255.0),
+                            (0.66666, 134.0/255.0, 75.0/255.0),
+                            (0.77777, 75.0/255.0, 20.0/255.0),
+                            (0.88888, 20.0/255.0, 192.0/255.0),
+                            (1.0, 192.0/255.0, 192.0/255.0)),
+        
+                 'blue':   ((0.0, 230.0/255.0, 230.0/255.0),
+                            (0.1, 230.0/255.0, 0.0/255.0),
+                            (0.2, 0.0/255.0, 255.0/255.0),
+                            (0.33333, 255.0/255.0, 205.0/255.0),
+                            (0.44444, 205.0/255.0, 211.0/255.0),
+                            (0.55555, 211.0/255.0, 11.0/255.0),
+                            (0.66666, 11.0/255.0, 100.0/255.0),
+                            (0.77777, 100.0/255.0, 60.0/255.0),
+                            (0.88888, 60.0/255.0, 192.0/255.0),
+                            (1.0, 192.0/255.0, 192.0/255.0))}    
+                   
+    maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
+    maskmap.set_under(color='k')
+    
+    
+    if SNRmask:
+        mplmasked=mproc.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
+        maskin=mplmasked.scenepanel[0]['colormask']
+    else:
+        maskin=deepcopy(mplin.scenepanel[0]['colormask'])
+        
+    if altrange:
+        maskin=maskin.loc[:,(maskin.columns>altrange[0]) & (maskin.columns<altrange[-1])]
+    
+    if datetimerange:
+        maskin=maskin[(maskin.index>datetimerange[0]) & (maskin.index<datetimerange[-1])]
+    
+    times=maskin.index
+    alts=maskin.columns
+    
+    numfigs=len(plt.get_fignums())
+    fig=plt.figure(numfigs+1)
+    
+    ax1=plt.subplot2grid((37,60),(0,0),rowspan=30,colspan=60)
+    cax=plt.subplot2grid((37,60),(30,0),rowspan=7,colspan=60)    
+    image=ax1.imshow(maskin.T[::-1],cmap=maskmap,interpolation='none',vmin=0,vmax=9,aspect='auto')
+    plt.tight_layout()
+#    mplot.forceAspect(ax1,aspect=ar)
+    dateticks(ax1, times, hours = hours,fsize=fontsize)
+    ax1.set_xlabel('Hours [Local]',fontsize=fontsize+4)
+    ax1.set_ylabel('Altitude [m]', fontsize=fontsize+4)
+    altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
+#    divider = make_axes_locatable(ax)
+#    cax = divider.append_axes("bottom", size="10%", pad=0.15)
+    cbar1=fig.colorbar(image,cax=cax,orientation='horizontal')
+#    cbar1.ax.set_autoscalex_on(False)
+    cbar1.set_ticks(cbar_ticklocs)
+    cbar1.ax.tick_params(bottom='off',top='off',labelsize=fontsize-4)
+    
+    sortedlabels=[s[0] for s in sorted(colordict.iteritems(), key=operator.itemgetter(1))]
+    cbarlabels=cbar1.set_ticklabels(sortedlabels)
+    
+    if saveplot:
+        if plotfilepath:
+            if os.path.isdir(plotfilepath):
+                savename=os.path.join(plotfilepath,plotfilename)
+            else:
+                os.mkdir(plotfilepath)
+                savename=os.path.join(plotfilepath,plotfilename)
+        fig.canvas.print_figure(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
+    
+    if showplot:
+        fig.canvas.draw()
     
 if __name__=='__main__':       
     altrange = np.arange(150,15030,30)

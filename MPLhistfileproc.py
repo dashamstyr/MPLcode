@@ -10,6 +10,7 @@ import pandas as pan
 import datetime,time,pytz
 import numpy as np
 import glob
+import MPLhisttools as mhist 
 
 if sys.platform == 'win32': 
     import matplotlib
@@ -50,7 +51,7 @@ localzone = pytz.timezone('US/Pacific')
 #        import MPLhisttools as mhist
 #    except ImportError:
 #        raise Exception('You havent specified where your modules are located!')
-import MPLhisttools as mhist    
+   
 startdate=datetime.datetime(2013,4,23,00)
 enddate=datetime.datetime(2015,4,23,1)
 altitudes=np.arange(150,15000,30)

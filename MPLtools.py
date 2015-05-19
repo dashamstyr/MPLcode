@@ -114,7 +114,6 @@ class MPL:
         return self
     
     def fromMPL(self, filename):
-        print filename
         with open(filename,'rb') as binfile:
             profdat_copol = OrderedDict()
             profdat_crosspol = OrderedDict()
@@ -594,11 +593,11 @@ class MPL:
                 print "No Extinction Profiles"
 
         if self.scenepanel:
-            paneltemp=pan.Panel()
+            paneldict={}
             for i in self.scenepanel[0].items:
                 dftemp = self.scenepanel[0].loc[i]
-                paneltemp.loc[i]=resample_cols(dftemp,altrange,verbose,method='ffill')                
-            self.scenepanel=[paneltemp]
+                paneldict[i]=resample_cols(dftemp,altrange,verbose,method='ffill')                
+            self.scenepanel=[pan.Panel.from_dict(paneldict)]
         else:
             if verbose:
                 print "No Scene Analysis"
@@ -1217,27 +1216,29 @@ def resample_cols(dfin,newcols,verbose=False,method='interp'):
         newcols=newcols[newcols<=maxcol]
         if verbose:
             print "WARNING: Maximum column value reset to {0}".format(newcols[-1])
-                
-    newvalues=[]   
-    for row in dfin.iterrows():
-        if method=='interp':
-            f=interp1d(oldcols,row[1].values)
-            newvalues.append(f(newcols))
-        elif method=='ffill':
-            newrow=[]
-            for col in newcols:
-                edgeval=row[1].groupby(row[1].index<=col).groups[True][-1]
-                newrow.append(row[1][edgeval])
-            newvalues.append(newrow)    
-        elif method=='bfill':
-            newrow=[]
-            for col in newcols:
-                edgeval=row[1].groupby(row[1].index<=col).groups[False][0]
-                newrow.append(row[1][edgeval])
-            newvalues.append(newrow)            
-    dfout=pan.DataFrame(data=newvalues,index=dfin.index,columns=newcols)
     
-    return dfout
+    if len(newcols)==len(oldcols) and all(newcols==oldcols):
+        return dfin
+    else:
+        newvalues=[]   
+        for row in dfin.iterrows():
+            if method=='interp':
+                f=interp1d(oldcols,row[1].values)
+                newvalues.append(f(newcols))
+            elif method=='ffill':
+                newrow=[]
+                for col in newcols:
+                    edgeval=row[1].groupby(row[1].index<=col).groups[True][-1]
+                    newrow.append(row[1][edgeval])
+                newvalues.append(newrow)    
+            elif method=='bfill':
+                newrow=[]
+                for col in newcols:
+                    edgeval=row[1].groupby(row[1].index<=col).groups[False][0]
+                    newrow.append(row[1][edgeval])
+                newvalues.append(newrow)            
+        dfout=pan.DataFrame(data=newvalues,index=dfin.index,columns=newcols)       
+        return dfout
         
     
 def MPLtoHDF(filename, appendflag = 'False'):
