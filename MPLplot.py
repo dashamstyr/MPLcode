@@ -599,5 +599,5 @@ if __name__=='__main__':
     
     doubleplot(MPLevent,**kwargs)
     
-    del MPLevent
+
     

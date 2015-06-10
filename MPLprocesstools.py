@@ -4,7 +4,11 @@ Created on Fri Jan 31 10:54:41 2014
 
 @author: dashamstyr
 """
-import os,sys
+import os,sys,glob
+
+codelib='C:\\Users\\dashamstyr\\Dropbox\\Python_Scripts\\GIT_Repos\\MPLcode'
+sys.path.append(codelib)
+
 import pandas as pan
 import numpy as np
 from copy import deepcopy
@@ -201,7 +205,7 @@ def SNR_mask_colors(mplin,**kwargs):
         mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
   
     #start by creating mask where areas that fall below SNRthreshold are zeroed out
-    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)|(mplin.scenepanel[0]['Type']=='molecular')
+    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)|(mplin.scenepanel[0]['Type']=='Clear Air')
     SNRmask.replace(False,np.nan,inplace=True)
     if inplace:
         mplout=mplin
@@ -432,7 +436,7 @@ def molecular_detect(MPLin,**kwargs):
     
     
     MPLin=MPLin.calc_all()  
-    NRBin=MPLin.NRB[0]
+    NRBin=MPLin.data[0]
     bg_alt=NRBin.columns.values[-20]
     #Step 1: calculate molecular profile
     z=NRBin.columns.values
@@ -967,13 +971,13 @@ def icewaterfilter(depolrat,**kwargs):
     icethresh=kwargs.get('icethresh',0.25)
     
     if depolrat <= waterthresh:
-        typeout='water'
+        typeout='Water Cloud'
         ratout=15.3
     elif depolrat <= icethresh:
-        typeout='mixed'
+        typeout='Mixed Cloud'
         ratout= 25.0
     else:
-        typeout='ice'
+        typeout='Ice Cloud'
         ratout=50.0
     
     return typeout,ratout
@@ -984,13 +988,13 @@ def aerosoltypefilter(depolrat,**kwargs):
     dustthresh=kwargs.get('dustthresh',0.15)
     
     if depolrat <= smokethresh:
-        typeout='water_soluble'
+        typeout='Urban Aerosol'
         ratout=30.0
     elif depolrat <= dustthresh:
-        typeout='smoke'
+        typeout='Smoke-Rich Aerosol'
         ratout=70.0
     else:
-        typeout='dust'
+        typeout='Dust-Rich Aerosol'
         ratout=40.0
     
     return typeout,ratout
@@ -1002,15 +1006,15 @@ def colormask_fromdict(mplin,pblin,molin,layersin):
     times=mplin.NRB[0].index
     mask=pan.DataFrame(index=times,columns=alts)
     
-    colordict={'molecular':0,
+    colordict={'Clear Air':0,
                'PBL':1,
-               'ice':2,
-               'water':3,
-               'mixed':4,
-               'dust':5,
-               'smoke':6,
-               'water_soluble':7,
-               'unidentified':8}
+               'Ice Cloud':2,
+               'Water Cloud':3,
+               'Mixed Cloud':4,
+               'Dust-Rich Aerosol':5,
+               'Smoke-Rich Aerosol':6,
+               'Urban Aerosol':7,
+               'Unidentified Aerosol':8}
     
     
     for t in times:
@@ -1020,7 +1024,7 @@ def colormask_fromdict(mplin,pblin,molin,layersin):
             tempmol=molin.ix[m,t]
             tempminalt=tempmol.ix['Base']
             tempmaxalt=tempmol.ix['Top']
-            tempprof[(tempprof.index>=tempminalt) & (tempprof.index<=tempmaxalt)]=colordict['molecular']
+            tempprof[(tempprof.index>=tempminalt) & (tempprof.index<=tempmaxalt)]=colordict['Clear Air']
 
         
         for l in layersin.items:
@@ -1164,15 +1168,15 @@ def scenemaker(layerdict,**kwargs):
     colordict=kwargs.get('colordict',[])
     
     if not colordict:
-        colordict={'molecular':0,
+        colordict={'Clear Air':0,
                    'PBL':1,
-                   'ice':2,
-                   'water':3,
-                   'mixed':4,
-                   'dust':5,
-                   'smoke':6,
-                   'water_soluble':7,
-                   'unidentified':8}
+                   'Ice Cloud':2,
+                   'Water Cloud':3,
+                   'Mixed Cloud':4,
+                   'Dust-Rich Aerosol':5,
+                   'Smoke-Rich Aerosol':6,
+                   'Urban Aerosol':7,
+                   'Unidentified Aerosol':8}
                    
     alts=mpl.data[0].columns
     times=mpl.data[0].index
@@ -1206,14 +1210,14 @@ def scenemaker(layerdict,**kwargs):
         for m in tempmol.iteritems():
             base=m[1]['Base']
             top=m[1]['Top']
-            typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='molecular'
-            subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='molecular'            
+            typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='Clear Air'
+            subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='Clear Air'            
             lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=molrat
             depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=moldepol
             delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0.0
             layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
             layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top  
-            colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['molecular']
+            colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['Clear Air']
         #finally assign layer properties to each layer one by one
         for l in templayers.iteritems():
             base=l[1]['Base']
@@ -1234,8 +1238,8 @@ def scenemaker(layerdict,**kwargs):
     
         #find and classify unidentified areas
         tempprof=typemask.loc[t]
-        tempprof.fillna('unidentified',inplace=True)
-        tempmask=pan.Series(alts,index=[v=='unidentified' for v in tempprof])
+        tempprof.fillna('Unidentified Aerosol',inplace=True)
+        tempmask=pan.Series(alts,index=[v=='Unidentified Aerosol' for v in tempprof])
         tempgroups=tempmask.groupby(level=0) 
         #assuming uniform altitude steps
         altstep=alts[1]-alts[0]
@@ -1249,14 +1253,14 @@ def scenemaker(layerdict,**kwargs):
                     else:
                         base=layeralt[0]
                         top=layeralt[-1]
-                        typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='unidentified'
-                        subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='unidentified'
+                        typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='Unidentified Aerosol'
+                        subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='Unidentified Aerosol'
                         lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=udefrat
                         depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=udefdepol
                         delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0
                         layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
                         layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
-                        colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['unidentified']
+                        colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['Unidentified Aerosol']
                         
     typemask.fillna(method='ffill',axis=1,inplace=True)
     subtypemask.fillna(method='ffill',axis=1,inplace=True) 
@@ -1604,17 +1608,17 @@ def sceneoptimize(mplin,**kwargs):
                 if len(lratbelow)==0:
                     a=lratabove.index[0]
                     continue
-                if ltype=='PBL' or ltype=='molecular' or ltype=='unidentified':
+                if ltype=='PBL' or ltype=='Clear Air' or ltype=='Unidentified Aerosol':
                     a=lratabove.index[0]
                 else:                
-                    if typebelow.iloc[-1]=='molecular' and typeabove.iloc[0]=='molecular':
+                    if typebelow.iloc[-1]=='Clear Air' and typeabove.iloc[0]=='Clear Air':
                         tempNRB=NRBprof[(NRBprof.index>=layerbase)&(NRBprof.index<=layertop)]
                         tempback=backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]
                         tempext=extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]
                         tempprof=[]
                         z=[]
                         for tempalt in lratbelow.index[::-1]:
-                            if typebelow.ix[tempalt]=='molecular':
+                            if typebelow.ix[tempalt]=='Clear Air':
                                 z.append(tempalt)
                                 tempprof.append(NRBprof.ix[tempalt])
                             else:
@@ -1623,7 +1627,7 @@ def sceneoptimize(mplin,**kwargs):
                         tempprof=[]
                         z=[]
                         for tempalt in lratabove.index:
-                            if typeabove.ix[tempalt]=='molecular':
+                            if typeabove.ix[tempalt]=='Clear Air':
                                 z.append(tempalt)
                                 tempprof.append(NRBprof.ix[tempalt])
                             else:
@@ -1684,17 +1688,17 @@ def sceneoptimize(mplin,**kwargs):
                 if len(lratbelow)==0:
                     a=lratabove.index[0]
                     continue
-                if ltype=='PBL' or ltype=='molecular' or ltype=='unidentified':
+                if ltype=='PBL' or ltype=='Clear Air' or ltype=='Unidentified Aerosol':
                     a=lratabove.index[0]
                 else:                
-                    if typebelow.iloc[-1]=='molecular' and typeabove.iloc[0]=='molecular':
+                    if typebelow.iloc[-1]=='Clear Air' and typeabove.iloc[0]=='Clear Air':
                         tempNRB=NRBprof[(NRBprof.index>=layerbase)&(NRBprof.index<=layertop)]
                         tempback=backprof[(backprof.index>=layerbase)&(backprof.index<=layertop)]
                         tempext=extprof[(extprof.index>=layerbase)&(extprof.index<=layertop)]
                         tempprof=[]
                         z=[]
                         for tempalt in lratbelow.index[::-1]:
-                            if typebelow.ix[tempalt]=='molecular':
+                            if typebelow.ix[tempalt]=='Clear Air':
                                 z.append(tempalt)
                                 tempprof.append(NRBprof.ix[tempalt])
                             else:
@@ -1703,7 +1707,7 @@ def sceneoptimize(mplin,**kwargs):
                         tempprof=[]
                         z=[]
                         for tempalt in lratabove.index:
-                            if typeabove.ix[tempalt]=='molecular':
+                            if typeabove.ix[tempalt]=='Clear Air':
                                 z.append(tempalt)
                                 tempprof.append(NRBprof.ix[tempalt])
                             else:
@@ -1777,10 +1781,10 @@ def quickplot(df,**kwargs):
 
     
 if __name__=='__main__':
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data')
-    savefilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data\Processed'
-    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Aksu Data\Figures'
-    filepath=mtools.get_files('Select processed file',filetype=('.h5','*.h5'))[0]
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
+    savefilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed'
+    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Figures'
+    filepath=mtools.get_files('Select raw file',filetype=('.mpl','*.mpl'))[0]
     filename=os.path.split(filepath)[-1]
     savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])
     plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
@@ -1788,7 +1792,9 @@ if __name__=='__main__':
     SNRthreshold=0.1
     molthresh=0.1
     layernoisethresh=0.1
-    layerdict=findalllayers(filename=filepath,timestep=timestep,molthresh=molthresh,
+    mpltest=mtools.MPL()
+    mpltest.fromMPL(filepath)
+    layerdict=findalllayers(mplin=mpltest,timestep=timestep,molthresh=molthresh,
                             layernoisethresh=layernoisethresh)
     mpltemp=scenemaker(layerdict)
 #    mpltemp=basiccorrection(mpltemp,inplace=True)

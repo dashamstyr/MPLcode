@@ -18,6 +18,7 @@ import datetime
 from scipy import constants as const    
 from copy import deepcopy
 from scipy.interpolate import interp1d
+from scipy.ndimage.filters import generic_filter as genfilt
 import os,sys
 import matplotlib.pyplot as plt
 from collections import OrderedDict 
@@ -57,7 +58,7 @@ class MPL:
     
     def append(self,MPLnew):
         
-        if type(self.header) == 'list':
+        if type(self.header) == list:
             self.header = MPLnew.header
         else:
             maxprofnum = self.header['profnum'][-1]
@@ -164,11 +165,11 @@ class MPL:
                     headerdat['shotsum'] = intarray32[0]  #total number of shots collected per profile
                     headerdat['trigfreq'] = intarray32[1] #laser trigger frequency (usually 2500 Hz)
                     headerdat['energy'] = intarray32[2]/1000.0  #mean of laser energy monitor in uJ                      
-                    headerdat['temp_0'] = intarray32[3]/1000.0  #mean of A/D#0 readings*100
-                    headerdat['temp_1'] = intarray32[4]/1000.0  #mean of A/D#1 readings*100
-                    headerdat['temp_2'] = intarray32[5]/1000.0  #mean of A/D#2 readings*100
-                    headerdat['temp_3'] = intarray32[6]/1000.0  #mean of A/D#3 readings*100
-                    headerdat['temp_4'] = intarray32[7]/1000.0  #mean of A/D#4 readings*100
+                    headerdat['temp_0'] = intarray32[3]/100.0  #mean of A/D#0 readings*100
+                    headerdat['temp_1'] = intarray32[4]/100.0  #mean of A/D#1 readings*100
+                    headerdat['temp_2'] = intarray32[5]/100.0  #mean of A/D#2 readings*100
+                    headerdat['temp_3'] = intarray32[6]/100.0  #mean of A/D#3 readings*100
+                    headerdat['temp_4'] = intarray32[7]/100.0  #mean of A/D#4 readings*100
                     
                     headerdat['bg_avg1'] = floatarray[0] #mean background signal value for channel 1
                     headerdat['bg_std1'] = floatarray[1] #standard deviation of backgruond signal for channel 1
@@ -194,7 +195,7 @@ class MPL:
                     headerdat['cloudbase'] = floatarray[11] #cloud base height in [m]
             
                     headerdat['baddat'] = byte_array[0]  #0: good data, 1: bad data
-                    headerdat['version'] = byte_array[1] #version of file format.  current version is 1
+                    headerdat['version'] = byte_array[1] #version of file format.  current version is 5
             
                     headerdat['bg_avg2'] = floatarray[12] #mean background signal for channel 2
                     headerdat['bg_std2'] = floatarray[13] #mean background standard deviation for channel 2
@@ -232,16 +233,17 @@ class MPL:
                     numchans = headerdat['numchans'] 
                     altstep = headerdat['bintime']*const.c/2 #altitude step in meters
                     maxalt = numbins*altstep
-                    minalt = headerdat['rangecal']
+                    firstbin=headerdat['firstbin']
+                    minalt = headerdat['rangecal']+firstbin*altstep
                     altrange = np.arange(minalt,maxalt,altstep,dtype='float')
                     
                     if numchans == 2:
                         crosspolvals.fromfile(binfile, numbins) 
                         temp = np.array(crosspolvals)                       
-                        profdat_crosspol[dt] = temp
+                        profdat_crosspol[dt] = temp[firstbin:]
                         copolvals.fromfile(binfile, numbins) 
                         temp = np.array(copolvals)
-                        profdat_copol[dt] = temp
+                        profdat_copol[dt] = temp[firstbin:]
                     else:
                         raise ValueError('Wrong number of channels')
                     
@@ -1014,7 +1016,8 @@ class MPL:
         for n in range(self.header['numchans'][0]):     
             rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2  #range in km for rsquared correction
             for i in range(len(MPLout[n].index)):
-                MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap            
+                MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap 
+                MPLout[n].iloc[i][:100]=0.0 #zero out below usable range threshold at 100m
         
         self.NRB = MPLout
         return self
@@ -1023,15 +1026,14 @@ class MPL:
         copol = self.NRB[0]
         crosspol = self.NRB[1]
         
-        depolMPL = crosspol.values/copol.values
+        depolMPL = (crosspol/copol).fillna(0.0)
         
-        depolvals = depolMPL/(depolMPL+1)
-        self.depolrat = []
-        self.depolrat.append(pan.DataFrame(depolvals,index = copol.index, columns = copol.columns))
+        depolvals = (depolMPL/(depolMPL+1)).fillna(0.0)
+        self.depolrat = [depolvals]
         
         return self
     
-    def calculate_SNR(self,bg_alt=[],numprofs=1,verbose=False, datatypes=['all']):
+    def calculate_SNR(self,bg_alt=[],numprofs=1,winsize=10,verbose=False, datatypes=['all']):
         """
         Calculates signal to noise ratios for mpl data
         
@@ -1090,21 +1092,24 @@ class MPL:
                 tempdat=dset[n]
                 if not bg_alt:
                     bg_alt=tempdat.columns[-100]
-                SNRtemp=pan.DataFrame(np.empty_like(tempdat.values),index=tempdat.index,columns=tempdat.columns)
-                for i in tempdat.index:
-                    tempprof=tempdat.ix[i]
-                    if dset_name=='data':
-                        tempback=bg[n].ix[i]
-                    else:
-                        tempback=0
-                    tempvals=[v for v,r in zip(tempprof.values,tempprof.index) if r>=bg_alt]
-                    tempfilt=[x for x in tempvals if not np.isnan(x)]
-                    sigmatemp=np.std(tempfilt)
-                    Ctemp=sigmatemp/np.mean(np.sqrt(np.abs(tempfilt)))
-                    SNR = lambda x: (x-tempback)/(Ctemp*np.sqrt(np.abs(x)))
+                
+                if dset_name=='data':
+                    SNRtemp=pan.DataFrame(np.empty_like(tempdat.values),index=tempdat.index,columns=tempdat.columns)
+                    for i in tempdat.index:
+                        tempprof=tempdat.ix[i]
                     
-                    SNRprof=np.array([SNR(v) for v in tempprof.values]).clip(0)
-                    SNRtemp.ix[i]=SNRprof
+                        tempback=bg[n].ix[i]
+                        tempvals=tempprof[bg_alt:].dropna()
+                        sigmatemp=np.std(tempvals)
+                        Ctemp=sigmatemp/np.mean(np.sqrt(np.abs(tempvals)))
+                        SNR = lambda x: (x-tempback)/(Ctemp*np.sqrt(np.abs(x)))
+                        SNRprof=np.array([SNR(v) for v in tempprof.values]).clip(0)
+                    
+                        SNRtemp.ix[i]=SNRprof
+                else:
+                    stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,columns=tempdat.columns)
+                    meanarray=pan.DataFrame(genfilt(tempdat,np.mean,winsize),index=tempdat.index,columns=tempdat.columns)
+                    SNRtemp=(meanarray/stdarray).fillna(0.0)
                 SNRdict[dset_name].append(SNRtemp)
                 
         self.SNR=SNRdict

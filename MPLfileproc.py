@@ -208,9 +208,6 @@ def fileproc(**kwargs):
     if verbose:
         print 'Done'
     
-
-
-    
     os.chdir(olddir)
     return MPLdat_event
     
