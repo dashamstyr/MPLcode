@@ -1,18 +1,22 @@
+from __future__ import absolute_import
+import os,sys,site
+home=os.environ['homepath']
+site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
+
 import numpy as np
-from numpy import ma
 from scipy.stats import cumfreq
-import glob, sys, os
 import time, datetime
 from math import isnan
 import pandas as pan
-import MPLtools as mtools
-import MPLprocesstools as mproc
-import MPLfileproc as mfile
-import MPLplot as mplot
 from matplotlib import pyplot as plt
 from matplotlib import cm, ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
+
+from . import MPLtools as mtools
+from . import MPLprocesstools as mproc
+from . import MPLfileproc as mfile
+from . import MPLplot as mplot
 
 def progress(datanum,tot_loops):
     """
@@ -24,7 +28,7 @@ def progress(datanum,tot_loops):
     sys.stdout.write("\rpercent complete: {0}%".format(the_frac))
     sys.stdout.flush()
 
-def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
+def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
     """
     takes a top-level directory and finds all relevant files 
     returns a list of filenames to iterate through
@@ -33,14 +37,14 @@ def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
     filedir = top-level directory.  If emplty, interactive window is used
     filetype = file extension to look for (.mpl or .h5), defaults to .mpl
     """    
-    altitudes = kwargs.get('altitudes',np.array([]))
+    altitudes = kwargs.get('altitudes',np.array(None))
     starttime = kwargs.get('starttime',datetime.datetime(1970,1,1,0))
     endtime = kwargs.get('endtime',datetime.datetime.now())
-    timestep = kwargs.get('timestep',[])
+    timestep = kwargs.get('timestep',None)
     verbose = kwargs.get('verbose',False)
     SNRmask=kwargs.get('SNRmask',True)
     SNRthreshold=kwargs.get('SNRthreshold',1)
-    bg_alt=kwargs.get('bg_alt',[])
+    bg_alt=kwargs.get('bg_alt',None)
     datatype=kwargs.get('datatype','data')
     NRBmask=kwargs.get('NRBmask',True)
     NRBthreshold=kwargs.get('NRBthreshold',3)
@@ -50,7 +54,7 @@ def filegetter(filedir=[],filetype='.mpl',daterange=[],**kwargs):
     topickle = kwargs.get('topickle',False)
     picklefile= kwargs.get('picklefile','test.p')
        
-    if not filedir:
+    if filedir is None:
         filedir = mtools.set_dir('Sepect top-level folder to search')
     
     outlist=[]
@@ -136,8 +140,8 @@ def dataextractor(datatype='NRB',**kwargs):
     
     """
     loadfiletype=kwargs.get('loadfiletype','list')
-    loadfilename=kwargs.get('loadfilename',[])
-    MPLlist=kwargs.get('MPLlist',[])
+    loadfilename=kwargs.get('loadfilename',None)
+    MPLlist=kwargs.get('MPLlist',None)
     toHDF=kwargs.get('toHDF',False)
     HDFfile=kwargs.get('HDFfile','test.h5')
     
@@ -204,7 +208,7 @@ def dataextractor(datatype='NRB',**kwargs):
 
 def scenefilter(dfin,panelin,**kwargs):
     filtertype=kwargs.get('filtertype',['aerosol'])
-    filtersubtype=kwargs.get('filtersubtype',[])
+    filtersubtype=kwargs.get('filtersubtype',None)
     verbose = kwargs.get('verbose',False)
     inplace=kwargs.get('inplace',True)
     
@@ -244,9 +248,9 @@ def histplot1D(df,**kwargs):
     fignum=kwargs.get('fignum',0)
     xlog=kwargs.get('xlog',False)
     ylog=kwargs.get('ylog',False)
-    xlimits=kwargs.get('xlimits',[])
-    ylimits=kwargs.get('ylimits',[])
-    xlabel=kwargs.get('xlabel',[])
+    xlimits=kwargs.get('xlimits',None)
+    ylimits=kwargs.get('ylimits',None)
+    xlabel=kwargs.get('xlabel',None)
     if ylog:
         ylabel=kwargs.get('ylabel','Log (Counts)')
     else:
@@ -316,8 +320,8 @@ def histplot2D(dfx,dfy,**kwargs):
     fsize=kwargs.get('fsize',32) #baseline font size
     ar=kwargs.get('ar',1.0)  #aspect ratio
     figheight=kwargs.get('figheight',12) #inches
-    xlabel=kwargs.get('xlabel',[])
-    ylabel=kwargs.get('ylabel',[])        
+    xlabel=kwargs.get('xlabel',None)
+    ylabel=kwargs.get('ylabel',None)        
     fignum=kwargs.get('fignum',0)
     cmap=kwargs.get('cmap',cm.bone)
     undercolor=kwargs.get('undercolor','r')
@@ -393,9 +397,9 @@ def althistplot(dfin,**kwargs):
     saveplot=kwargs.get('savefile',False)
     plotfilename=kwargs.get('plotfilename','2dalthist_test.png')
     fsize=kwargs.get('fsize',32) #baseline font size
-    ar=kwargs.get('ar',[])  #aspect ratio
+    ar=kwargs.get('ar',None)  #aspect ratio
     figheight=kwargs.get('figheight',12) #inches
-    xlabel=kwargs.get('xlabel',[])
+    xlabel=kwargs.get('xlabel',None)
     ylabel=kwargs.get('ylabel','Altitude [m]')        
     fignum=kwargs.get('fignum',0)
     cmap=kwargs.get('cmap',cm.bone)

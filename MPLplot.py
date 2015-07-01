@@ -1,3 +1,8 @@
+from __future__ import absolute_import
+import os,sys,site
+home=os.environ['homepath']
+site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
+
 import numpy as np
 import os, sys
 import numpy as np
@@ -6,10 +11,9 @@ import bisect
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import pandas as pan
-import MPLtools as mtools
-import MPLprocesstools as mproc
+from MPLcode import MPLtools as mtools
 from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+#from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
 
@@ -55,9 +59,10 @@ def top_plot(ax, data, xdata, ydata, **kwargs):
     overcolor=kwargs.get('overcolor','w')
     undercolor=kwargs.get('undercolor','k')
     numvals=kwargs.get('numvals',50)
+    interpolation=kwargs.get('interpolation',None)
     
     my_cmap=custom_cmap(maptype=maptype,numvals=numvals,overcolor=overcolor,undercolor=undercolor)  
-    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
+    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap, interpolation=interpolation)
     forceAspect(ax,ar)       
     altticks(ax, ydata, fsize = fsize, tcolor = 'w')
     
@@ -82,9 +87,9 @@ def bottom_plot(fig,ax,data,xdata,ydata,**kwargs):
     overcolor=kwargs.get('overcolor','w')
     undercolor=kwargs.get('undercolor','k')
     numvals=kwargs.get('numvals',50)
-    
+    interpolation=kwargs.get('interpolation',None)
     my_cmap=custom_cmap(maptype=maptype,numvals=numvals,overcolor=overcolor,undercolor=undercolor)    
-    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap)
+    im = ax.imshow(data, vmin=vrange[0], vmax=vrange[1], cmap = my_cmap, interpolation=interpolation)
     forceAspect(ax,ar)        
     altticks(ax, ydata, fsize=fsize)  
     if orientation=='vertical':
@@ -103,7 +108,7 @@ def forceAspect(ax,aspect=1):
     extent =  im[0].get_extent()
     ax.set_aspect(abs((extent[1]-extent[0])/(extent[3]-extent[2]))/aspect)
 
-def dateticks(ax, axisdat,hours = [], fsize = 21, tcolor = 'k'):
+def dateticks(ax, axisdat,hours = None, fsize = 21, tcolor = 'k'):
     
     dold = axisdat[0].strftime('%d')
     hold = axisdat[0].strftime('%H')
@@ -119,7 +124,7 @@ def dateticks(ax, axisdat,hours = [], fsize = 21, tcolor = 'k'):
             tickmarks.append(n)
         else:
             htemp = d.strftime('%H')
-            if not hours:
+            if hours is None:
                 if htemp != hold:
                     ticklabels.append(d.strftime('%H'))
                     tickmarks.append(n)
@@ -270,10 +275,10 @@ def doubleplot(datafile,**kwargs):
     """
     
     #set kwarg defaults 
-    starttime = kwargs.get('starttime',[])
-    endtime = kwargs.get('endtime',[])
-    timestep = kwargs.get('timestep',[])
-    altrange = kwargs.get('altrange',[])
+    starttime = kwargs.get('starttime',None)
+    endtime = kwargs.get('endtime',None)
+    timestep = kwargs.get('timestep',None)
+    altrange = kwargs.get('altrange',None)
     hours = kwargs.get('hours',['03','06', '09','12', '15','18','21']) 
     fsize = kwargs.get('fsize',18) #baseline font size
     ar = kwargs.get('ar',2.0)  #aspect ratio
@@ -286,6 +291,7 @@ def doubleplot(datafile,**kwargs):
     orientation=kwargs.get('orientation','vertical')
     toptype=kwargs.get('toptype','NRB')
     bottomtype=kwargs.get('bottomtype','depol')
+    interpolation=kwargs.get('interpolation',None)
     
     if type(datafile)in [str,unicode]:
         savefilename = kwargs.get('savefilename','{0}.png'.format(datafile.split('.')[0]))
@@ -311,12 +317,12 @@ def doubleplot(datafile,**kwargs):
         
         MPLevent.fromHDF(datafile)    
     else:
-        MPLevent = datafile
+        MPLevent = deepcopy(datafile)
         
     if len(altrange)>0:
         MPLevent.alt_resample(altrange)    
     
-    if [i for i in [starttime,endtime,timestep] if len(i)>0]:
+    if any([starttime,endtime,timestep]):
         MPLevent.time_resample(timestep=timestep,starttime=starttime,endtime=endtime)
         
       
@@ -335,7 +341,7 @@ def doubleplot(datafile,**kwargs):
         if not MPLevent.depolrat:
             MPLevent.calculate_depolrat()
         if SNRmask:
-            MPLevent_masked=mproc.SNR_mask_depol(MPLevent,SNRthreshold=SNRthresh)
+            MPLevent_masked=mtools.SNR_mask_depol(MPLevent,SNRthreshold=SNRthresh)
             bottomdat = MPLevent_masked.depolrat[0]
         else:
             bottomdat = MPLevent.depolrat[0]
@@ -369,7 +375,7 @@ def doubleplot(datafile,**kwargs):
     ax1 = fig.add_subplot(2,1,1)
     im1 = top_plot(ax1,topdat.T[::-1],dtindex,alt[::-1],ar=ar, 
                            vrange=(topplot_min,topplot_max),fsize=fsize,maptype=colormap,
-                            orientation=orientation)
+                            orientation=orientation, interpolation=interpolation)
     cbar1 = fig.colorbar(im1, orientation = 'vertical', aspect = 6, extend='both')
     cbar1.set_ticks(np.arange(topplot_min,topplot_max+topplot_step,topplot_step))
     cbar1.set_ticklabels(np.arange(topplot_min,topplot_max+topplot_step,topplot_step))
@@ -383,7 +389,7 @@ def doubleplot(datafile,**kwargs):
     ax2 = fig.add_subplot(2,1,2)
     im2 = bottom_plot(fig, ax2, bottomdat.T[::-1],dtindex,alt[::-1],ar=ar, 
                      vrange=(bottomplot_min,bottomplot_max),fsize=fsize,maptype=colormap,
-                        orientation=orientation)
+                        orientation=orientation, interpolation=interpolation)
     cbar2 = fig.colorbar(im2, orientation = 'vertical', aspect = 6, extend='both')
     cbar2.set_ticks(np.arange(bottomplot_min,bottomplot_max+bottomplot_step,bottomplot_step))
     cbar2.set_ticklabels(np.arange(bottomplot_min,bottomplot_max+bottomplot_step,bottomplot_step))
@@ -444,66 +450,79 @@ def colormask_plot(mplin,**kwargs):
     #set color codes for different layers
     hours=kwargs.get('hours',['00','06','12','18'])
     fontsize=kwargs.get('fontsize',24)
-    cbar_ticklocs=kwargs.get('cbarticklocs',np.arange(0,9)+0.5)
-    altrange=kwargs.get('altrange',[])
-    datetimerange=kwargs.get('datetimerange',[])
+    altrange=kwargs.get('altrange',None)
+    datetimerange=kwargs.get('datetimerange',None)
     SNRmask=kwargs.get('SNRmask',False)
     SNRthresh=kwargs.get('SNRthresh',3.0)
     SNRtype=kwargs.get('SNRtype','NRB')
     saveplot=kwargs.get('saveplot',True)
     showplot=kwargs.get('showplot',True)
-    plotfilepath=kwargs.get('plotfilepath',[])
+    plotfilepath=kwargs.get('plotfilepath',None)
     plotfilename=kwargs.get('plotfilename','testmaskfig.png')
     dpi = kwargs.get('dpi',100)    
-    colordict=kwargs.get('colordict',{'molecular':0,
+    colordict=kwargs.get('colordict',{'Clear Air':0,
                                        'PBL':1,
-                                       'ice':2,
-                                       'water':3,
-                                       'mixed':4,
-                                       'dust':5,
-                                       'smoke':6,
-                                       'water_soluble':7,
-                                       'unidentified':8})
-
-    cmapdict =  {'red':    ((0.0, 176.0/255.0, 176.0/255.0),
-                            (0.1, 176.0/255.0, 255.0/255.0),
-                            (0.2, 255.0/255.0, 255.0/255.0),
-                            (0.33333, 255.0/255.0, 0.0/255.0),
-                            (0.44444, 0.0/255.0, 186.0/255.0),
-                            (0.55555, 186.0/255.0, 184.0/255.0),
-                            (0.66666, 184.0/255.0, 75.0/255.0),
-                            (0.77777, 75.0/255.0, 220.0/255.0),
-                            (0.88888, 220.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0)),
+                                       'Ice Cloud':2,
+                                       'Water Cloud':3,
+                                       'Mixed Cloud':4,
+                                       'Dust-Rich Aerosol':5,
+                                       'Smoke-Rich Aerosol':6,
+                                       'Urban Aerosol':7,
+                                       'Unidentified Aerosol':8,
+                                       'Insufficient Signal':9})
+    
+    Clear=(176.0,244.0,230.0)
+    PBL=(255.0,69.0,0.0)
+    Ice=(255.0,255.0,255.0)
+    Water=(0.0,0.0,205.0)
+    Mixed=(186.0,85.0,211.0)
+    Dust=(184.0,134.0,11.0)
+    Smoke=(75.0,75.0,100.0)
+    Urban=(220.0,20.0,60.0)
+    Unidentified=(192.0,192.0,192.0)
+    Insufficient=(0.0,0.0,0.0)
+                                       
+    cmapdict =  {'red':    ((0.0, Clear[0]/255.0, Clear[0]/255.0),
+                            (0.1, Clear[0]/255.0, PBL[0]/255.0),
+                            (0.2, PBL[0]/255.0, Ice[0]/255.0),
+                            (0.3, Ice[0]/255.0, Water[0]/255.0),
+                            (0.4, Water[0]/255.0, Mixed[0]/255.0),
+                            (0.5, Mixed[0]/255.0, Dust[0]/255.0),
+                            (0.6, Dust[0]/255.0, Smoke[0]/255.0),
+                            (0.7, Smoke[0]/255.0, Urban[0]/255.0),
+                            (0.8, Urban[0]/255.0, Unidentified[0]/255.0),
+                            (0.9, Unidentified[0]/255.0, Insufficient[0]/255.0),
+                            (1.0, Insufficient[0]/255.0, Insufficient[0]/255.0)),
         
-                 'green':  ((0.0, 244.0/255.0, 244.0/255.0),
-                            (0.1, 244.0/255.0, 69.0/255.0),
-                            (0.2, 69.0/255.0, 255.0/255.0),
-                            (0.33333, 255.0/255.0, 0.0/255.0),
-                            (0.44444, 0.0/255.0, 85.0/255.0),
-                            (0.55555, 85.0/255.0, 134.0/255.0),
-                            (0.66666, 134.0/255.0, 75.0/255.0),
-                            (0.77777, 75.0/255.0, 20.0/255.0),
-                            (0.88888, 20.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0)),
+                 'green':  ((0.0, Clear[1]/255.0, Clear[1]/255.0),
+                            (0.1, Clear[1]/255.0, PBL[1]/255.0),
+                            (0.2, PBL[1]/255.0, Ice[1]/255.0),
+                            (0.3, Ice[1]/255.0, Water[1]/255.0),
+                            (0.4, Water[1]/255.0, Mixed[1]/255.0),
+                            (0.5, Mixed[1]/255.0, Dust[1]/255.0),
+                            (0.6, Dust[1]/255.0, Smoke[1]/255.0),
+                            (0.7, Smoke[1]/255.0, Urban[1]/255.0),
+                            (0.8, Urban[1]/255.0, Unidentified[1]/255.0),
+                            (0.9, Unidentified[1]/255.0, Insufficient[1]/255.0),
+                            (1.0, Insufficient[1]/255.0, Insufficient[1]/255.0)),
         
-                 'blue':   ((0.0, 230.0/255.0, 230.0/255.0),
-                            (0.1, 230.0/255.0, 0.0/255.0),
-                            (0.2, 0.0/255.0, 255.0/255.0),
-                            (0.33333, 255.0/255.0, 205.0/255.0),
-                            (0.44444, 205.0/255.0, 211.0/255.0),
-                            (0.55555, 211.0/255.0, 11.0/255.0),
-                            (0.66666, 11.0/255.0, 100.0/255.0),
-                            (0.77777, 100.0/255.0, 60.0/255.0),
-                            (0.88888, 60.0/255.0, 192.0/255.0),
-                            (1.0, 192.0/255.0, 192.0/255.0))}    
+                 'blue':   ((0.0, Clear[2]/255.0, Clear[2]/255.0),
+                            (0.1, Clear[2]/255.0, PBL[2]/255.0),
+                            (0.2, PBL[2]/255.0, Ice[2]/255.0),
+                            (0.3, Ice[2]/255.0, Water[2]/255.0),
+                            (0.4, Water[2]/255.0, Mixed[2]/255.0),
+                            (0.5, Mixed[2]/255.0, Dust[2]/255.0),
+                            (0.6, Dust[2]/255.0, Smoke[2]/255.0),
+                            (0.7, Smoke[2]/255.0, Urban[2]/255.0),
+                            (0.8, Urban[2]/255.0, Unidentified[2]/255.0),
+                            (0.9, Unidentified[2]/255.0, Insufficient[2]/255.0),
+                            (1.0, Insufficient[2]/255.0, Insufficient[2]/255.0))}    
                    
     maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
-    maskmap.set_under(color='k')
     
     
     if SNRmask:
-        mplmasked=mproc.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
+        mplmasked=mtools.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
         maskin=mplmasked.scenepanel[0]['colormask']
     else:
         maskin=deepcopy(mplin.scenepanel[0]['colormask'])
@@ -533,6 +552,7 @@ def colormask_plot(mplin,**kwargs):
 #    cax = divider.append_axes("bottom", size="10%", pad=0.15)
     cbar1=fig.colorbar(image,cax=cax,orientation='horizontal')
 #    cbar1.ax.set_autoscalex_on(False)
+    cbar_ticklocs=np.arange(len(colordict)+0.5)
     cbar1.set_ticks(cbar_ticklocs)
     cbar1.ax.tick_params(bottom='off',top='off',labelsize=fontsize-4)
     
@@ -590,12 +610,12 @@ if __name__=='__main__':
     
     MPLevent.time_resample(timestep,starttime,endtime)  
     MPLevent.calc_all()
-    MPLevent=mproc.NRB_mask_all(MPLevent) 
+    MPLevent=mtools.NRB_mask_all(MPLevent) 
     
     kwargs = {'saveplot':True,'showplot':True,'verbose':True,
                 'savefilepath':savepath,'savefilename':savefilename,
                 'hours':hours,'bottomplot_limits':bottomplot_limits,'topplot_limits':topplot_limits,'SNRmask':True,
-                'colormap':'customjet','orientation':'vertical'}
+                'colormap':'customjet','orientation':'vertical','interpolation':none}
     
     doubleplot(MPLevent,**kwargs)
     

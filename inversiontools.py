@@ -3,6 +3,8 @@ import pandas as pan
 from copy import deepcopy
 import random
 import matplotlib.pyplot as plt
+from itertools import groupby
+import operator
 
 def std_atm(z):
     ########################################################################
@@ -213,7 +215,7 @@ def calcprof(betaprof,sigmaprof,E0=1.0,C = 1.0,T_0=1.0):
     
     return P_z
 
-def addlayer(P_in, beta, lrat, bottom=[], top=[], inplace=True):
+def addlayer(P_in, beta, lrat, bottom=None, top=None, inplace=True):
     """
     Function that adds a layer of known backscatter coefficient
     and lidar ratio onto an existing lidar response profile
@@ -236,9 +238,9 @@ def addlayer(P_in, beta, lrat, bottom=[], top=[], inplace=True):
     if type(beta)!=float:
         z_in = np.array(beta.index.values, dtype='float64')
     else:
-        try:
+        if bottom is not None and top is not None:
             z_in = np.array(P_out.index[(P_out.index>=bottom)&(P_out.index<=top)],dtype='float64')
-        except IndexError:
+        else:
             print "You must define a layer top and bottom"
             return
             
@@ -305,7 +307,7 @@ def backandnoise(P_in,background = 0.0,stdev = 0.0,inplace=True):
        
     return P_out
 
-def background_subtract(P_in,back_avg=[],z_min=[],inplace=True):
+def background_subtract(P_in,back_avg=None,z_min=None,inplace=True):
     #subtracts background from signal, without background
     #takes advantage of inverse square law to calculate background signal for
     #a profile
@@ -318,12 +320,12 @@ def background_subtract(P_in,back_avg=[],z_min=[],inplace=True):
     else:
         P_out = deepcopy(P_in)
     
-    if back_avg:
+    if back_avg is not None:
         P_out['vals']=P_out['vals']-back_avg
     else:    
         #select data from altitudes higher than z_min and muliply full signal by
         #range squared, if this gives less than 500 values, take uppermost 500
-        if z_min:
+        if z_min is not None:
             z=P_out.index[P_out.index>=z_min]
         else:
             z=P_out.index[-100:]
@@ -339,7 +341,7 @@ def background_subtract(P_in,back_avg=[],z_min=[],inplace=True):
         
     return P_out
 
-def calcNRB(P_in,E0=1.0,background=[],inplace=True):
+def calcNRB(P_in,E0=1.0,background=None,inplace=True):
     P_out=background_subtract(P_in,back_avg=background,inplace=inplace)
     P_out['rsq'] = P_out['vals']*(P_in.index.values/1000.0)**2.0
     P_out['NRB'] = P_out['rsq']/E0
@@ -429,7 +431,7 @@ def profgen(z,**kwargs):
     wave = kwargs.get('wave',532.0)  #nm
     E0 = kwargs.get('E0',1.0)
     C = kwargs.get('C',1.0)
-    layers = kwargs.get('layers',[])
+    layers = kwargs.get('layers',None)
     background = kwargs.get('background',0.0) #background signal level
     noise = kwargs.get('noise',0.0) #use defined noise level, defaults to 0
     donorm = kwargs.get('donorm',False) #if true, profile is normalized by first value
@@ -439,7 +441,7 @@ def profgen(z,**kwargs):
     
     #add particulate layers, if any
     
-    if layers:
+    if layers is not None:
         for n in range(len(layers)):
             templayer=layers[n]
             if type(templayer['beta_p'])==float:
@@ -460,7 +462,7 @@ def profgen(z,**kwargs):
     return P_out
     
 
-def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = []):
+def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = None):
     """
     Inputs:
         P_in: a pandas series depicting a 1-D profile of NRB from an MPL class object. 
@@ -507,7 +509,7 @@ def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = []):
     beta_total = pan.Series(index=altitudes)
     
         
-    if not calrange:
+    if calrange is None:
         for alt in reversed(altitudes):
             if alt == altitudes[-1]:
                 #at calibration altitude assume no aerosols
@@ -587,7 +589,7 @@ def fernald(P_in, lrat, wave = 532.0, E = 1.0, calrange = []):
     return beta_total,sigma_total
 
 
-def klett(P_in,lrat_in,r_m,sigma_m,k=1):
+def klett(P_in,lrat_in,r_m=None,k=1,wave=532.0):
     """
     Function that calculates backscatter and extinction coefficients based on
     variable lidar ratios using the Klett algorithm 
@@ -606,11 +608,17 @@ def klett(P_in,lrat_in,r_m,sigma_m,k=1):
     sigma = pandas series of extinction coefficients
     
     """
+
     
-    S=np.log(P_in)
+    S=np.log(P_in).fillna(method='pad',inplace=True)
     lrat = 1.0/lrat_in  #Klett definition of lidar ratio is backscatter/extintion not the other way round
 
     altitudes = S.index.values
+    if r_m is None:
+        for a in altitudes[::-1]:
+            if not np.isnan(P_in.ix[a]):
+                r_m=a
+                break
     
     sigma = pan.Series(index=altitudes,dtype='float')
     beta = pan.Series(index=altitudes,dtype='float')
@@ -624,7 +632,7 @@ def klett(P_in,lrat_in,r_m,sigma_m,k=1):
            break
     
     newalts = S_new.index.values
-    
+    sigma_m=molprof(z=newalts,wave=wave)['sigma_R'].loc[r_m]
     for alt in reversed(newalts):
         if alt == newalts[-1]:            
             sigma.loc[alt] = sigma_m
@@ -644,7 +652,8 @@ def klett(P_in,lrat_in,r_m,sigma_m,k=1):
 def klett2(P_in,lrat_in,**kwargs):
     """
     Function that calculates backscatter and extinction coefficients based on
-    variable lidar ratios using the Klett algorithm 
+    variable lidar ratios using the Klett algorithm .  Note: requires lrat_in not
+    contain zero values except for at r_m altitude
     
     Inputs:
     P_in = a pandas series with values proportional to range squared corrected signal strength and altitude index
@@ -658,15 +667,14 @@ def klett2(P_in,lrat_in,**kwargs):
     sigma = pandas series of extinction coefficients
     
     """
-    r_m=kwargs.get('r_m',[])
-    beta_m=kwargs.get('beta_m',[])
+    r_m=kwargs.get('r_m',None)
     wave=kwargs.get('wave',532.0)
     
-    lrat = 1.0/lrat_in  #Klett definition of lidar ratio is backscatter/extintion not the other way round
+    lrat = (1.0/lrat_in).replace(np.inf,0.0) #Klett definition of lidar ratio is backscatter/extintion not the other way round
     lrat_R=3.0/(8.0*np.pi)
     altitudes = P_in.index.values
     
-    if not r_m:
+    if r_m is None:
         for a in altitudes[::-1]:
             if not np.isnan(P_in.ix[a]):
                 r_m=a
@@ -683,65 +691,98 @@ def klett2(P_in,lrat_in,**kwargs):
     newalts = P_new.index.values
     P_mol=molprof(z=newalts,wave=wave)
     beta_R=P_mol['beta_R']
-    if not beta_m:
-        beta_m=beta_R.loc[r_m]
+    beta_m=beta_R.loc[r_m]
     
-    sigma_m=beta_m/lrat_R
-    S=np.log(P_new)
-    S.fillna(method='pad',inplace=True)
+    sigma_R=P_mol['sigma_R']
+    sigma_m=sigma_R.loc[r_m]
+    #add arbitrary translation before transformation to avoid negative numbers in log value
+    #because inversion is based on the differential of dS/dr, this changes nothing in solution    
+    P_trans = P_new+0.001-np.min(P_new.values)
+    S=np.log(P_trans)
     
     for alt in reversed(newalts):
-        if alt == newalts[-1]: 
-            try:
-                beta.ix[alt]=beta_m
-            except ValueError:
-                print alt
+        if alt == r_m: 
+            beta.ix[alt]=beta_m
             sigma.ix[alt]=sigma_m
             S_m=S.ix[alt]
             beta_int1=0
             beta_int2=0
             S_int=0
-            S_R_int=0
-            oldalt = alt
-        
+            oldalt = alt      
         else:
-            delta_r=oldalt-alt
-            if lrat.ix[alt]==np.inf:
-                if lrat.ix[oldalt]!=np.inf:
-                    S_R_int=0
-                    beta.ix[alt]=beta_R.ix[alt]
-                    sigma.ix[alt]=beta_R.ix[alt]/lrat_R
-                    sigma_m=sigma.ix[alt]
-                    S_m=S.ix[alt]
-                    oldalt=alt
-                else:                    
-                    S_R_int+=0.5*(np.exp(S.ix[alt]-S_m)+np.exp(S.ix[oldalt]-S_m))*delta_r
-                    sigma.ix[alt]=np.exp(S.ix[alt]-S_m)/(sigma_m**-1+2.0*S_R_int)
-                    beta.ix[alt]=sigma.ix[alt]*lrat_R
-                    oldalt = alt
+            delta_r=oldalt-alt  
+            if oldalt==r_m:
+                #in this case, use simple reimann integration
+                beta_int1 += (2.0/lrat_R)*(beta_R.ix[alt])*delta_r
+                beta_int2 += 2.0*(beta_R.ix[alt]/lrat.ix[alt])*delta_r
+                delta_Sprime = S.ix[alt]-S_m+beta_int1-beta_int2
+                S_int+=2.0*(np.exp(delta_Sprime)/lrat.ix[alt])*delta_r
             else:
-                if lrat.ix[oldalt]==np.inf:
-                    beta_int1=0
-                    beta_int2=0
-                    S_int=0
-                    beta_m=beta.ix[oldalt]
-                    S_m=S.ix[oldalt]
-                    
-                beta_int1+=0.5*((2.0/lrat_R)*(beta_R.ix[alt]+beta_R.ix[oldalt]))*delta_r
+                #otherwise use trapezoidal integration
+                beta_int1+=0.5*((2.0/lrat_R)*(beta_R.ix[alt]+beta_R.ix[oldalt]))*delta_r   
                 beta_int2+=0.5*(2.0*((beta_R.ix[alt]/lrat.ix[alt])+(beta_R.ix[oldalt]/lrat.ix[oldalt])))*delta_r            
-                delta_Sprime=S.ix[alt]-S_m+beta_int1-beta_int2
-                S_int+=0.5*(2.0*((np.exp(delta_Sprime)/lrat.ix[alt])+(np.exp(delta_Sprime)/lrat.ix[oldalt])))*delta_r
+                delta_Sprime=S.ix[alt]-S_m+beta_int1-beta_int2                
+                S_int+=0.5*(2.0*((np.exp(delta_Sprime)/lrat.ix[alt])+(np.exp(old_delta_Sprime)/lrat.ix[oldalt])))*delta_r
                 
-                beta.ix[alt]=np.exp(delta_Sprime)/((1.0/beta_m)+S_int)
+            beta.ix[alt]=np.exp(delta_Sprime)/((1.0/beta_m)+S_int)
                 
-                if beta.ix[alt]<=beta_R.ix[alt]:
-                    beta_p=0.0
-                else:
-                    beta_p=beta.ix[alt]-beta_R.ix[alt]
-                sigma.ix[alt]=(beta_p/lrat.ix[alt])+beta_R.ix[alt]/lrat_R
-                oldalt = alt
-                
+            if beta.ix[alt]<=beta_R.ix[alt]:
+                beta_p=0.0
+            else:
+                beta_p=beta.ix[alt]-beta_R.ix[alt]
+            sigma.ix[alt]=(beta_p/lrat.ix[alt])+beta_R.ix[alt]/lrat_R
+            oldalt = alt
+            old_delta_Sprime=delta_Sprime
     return beta,sigma
+
+def invert_profile(profin,lratin,**kwargs):
+    method=kwargs.get('method','klett2')
+    refalt=kwargs.get('refalt',profin.index[-1])
+    backscatter=pan.Series(np.nan,index=profin.index)
+    extinction=pan.Series(np.nan,index=profin.index)
+    
+    mollayers=lratin[lratin==0.0]
+    moledges=[]
+    altstep=lratin.index[1]-lratin.index[0]
+    
+    for key,alt in groupby(enumerate(mollayers.index),lambda (i,x):i-(x-mollayers.index[0])/altstep):
+        temprange=map(operator.itemgetter(1),alt)
+        moledges.append((temprange[0],temprange[-1]))
+    
+    alt=profin.index[-1]
+    tempedges=moledges.pop()
+    while True:        
+        if tempedges[0]<alt<=tempedges[1]: 
+            layeralts=profin.ix[tempedges[0]:tempedges[1]].index.values
+            tempmol=molprof(z=layeralts)
+            backscatter.ix[layeralts]=tempmol['beta_R'].values
+            extinction.ix[layeralts]=tempmol['sigma_R'].values
+            alt=layeralts[0]
+        else:
+            try:
+                tempedges=moledges.pop()
+                layeralts=profin.ix[tempedges[1]:alt].index[1:]
+                alt=tempedges[1]
+            except IndexError:
+                layeralts=profin.ix[:alt].index
+                alt=layeralts[0]
+                
+            layerprof=profin.ix[layeralts]
+            layerlrat=lratin.ix[layeralts]
+
+            if method=='klett2':
+                tempback,tempext=klett2(layerprof,layerlrat,r_m=layeralts[-1])
+    
+            backscatter.ix[layeralts]=tempback.values
+            extinction.ix[layeralts]=tempext.values
+            
+        if alt==profin.index[0]:
+            break
+        
+    return backscatter,extinction
+            
+    #Step 2: Use Fernald algorithm for molecular sections    
+    #Step 3: Use klett2 for layers
 
 def lrat_tester_full(P_0,**kwargs):
     wave=kwargs.get('wave',532.0)
@@ -749,7 +790,7 @@ def lrat_tester_full(P_0,**kwargs):
     method=kwargs.get('method','klett2')
     lrat_klett=kwargs.get('lrat_klett',np.arange(.50,1.55,.5))
     lrat_fern=kwargs.get('lrat_fern',np.arange(15,80))
-    calrange_fern=kwargs.get('calrange_fern',[])
+    calrange_fern=kwargs.get('calrange_fern',None)
     r_m=kwargs.get('r_m',[])
     k=kwargs.get('k',1.0)
     
@@ -770,13 +811,11 @@ def lrat_tester_full(P_0,**kwargs):
         lratprof=P_0['sigma_t']/P_0['beta_t'] 
         lratprof.fillna(value=8.0*np.pi/3.0,inplace=True)
         if not r_m:
-            r_m=P_0.index.values[-1]
-        
-        sigma_m=P_0['sigma_t'].loc[r_m]        
+            r_m=P_0.index.values[-1]    
         for tempdelt in lrat_klett:
             lrattemp=lratprof*tempdelt
             beta_out[tempdelt],sigma_out[tempdelt]=klett(P_in=P_0['NRB'],lrat_in=lrattemp,
-                                                            r_m=r_m,sigma_m=sigma_m,k=k)
+                                                            r_m=r_m,k=k,wave=wave)
             deltabeta[tempdelt]=100.0*(P_0['beta_t']-beta_out[tempdelt])/P_0['beta_t']
             deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
     elif method=='klett2':
@@ -785,15 +824,13 @@ def lrat_tester_full(P_0,**kwargs):
         deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_klett)
         deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_klett)
         lratprof=P_0['sigma_p']/P_0['beta_p']         
-        lratprof.fillna(value=0,inplace=True)
+        lratprof.fillna(value=0.0,inplace=True)
         if not r_m:
             r_m=P_0.index.values[-1]
-        
-        beta_m=P_0['beta_t'].loc[r_m] 
+
         for tempdelt in lrat_klett:
             lrattemp=lratprof*tempdelt
-            beta_out[tempdelt],sigma_out[tempdelt]=klett2(P_in=P_0['NRB'],lrat_in=lrattemp,
-                                                            r_m=r_m,beta_m=beta_m)
+            beta_out[tempdelt],sigma_out[tempdelt]=klett2(P_in=P_0['NRB'],lrat_in=lrattemp,r_m=r_m)
             deltabeta[tempdelt]=100.0*(P_0['beta_t']-beta_out[tempdelt])/P_0['beta_t']
             deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
     
@@ -808,8 +845,8 @@ def lrat_tester_quick(P_0,**kwargs):
     method=kwargs.get('method','klett2')
     lrat_klett=kwargs.get('lrat_klett',np.arange(-.50,.55,.5))
     lrat_fern=kwargs.get('lrat_fern',np.arange(15,80))
-    calrange_fern=kwargs.get('calrange_fern',[])
-    r_m=kwargs.get('r_m',[])
+    calrange_fern=kwargs.get('calrange_fern',None)
+    r_m=kwargs.get('r_m',None)
     k=kwargs.get('k',1.0)
     lrat_type=kwargs.get('lrat_type','part')
     
@@ -910,7 +947,7 @@ if __name__ == '__main__':
     layer1={'beta_p':beta_layer,'lrat':15}
     P_0=profgen(z,layers=[layer1],background=background,noise=noise)
 
-    testpan=lrat_tester_full(P_0,lrat_klett=[0.5,1.0,1.5])
+    testpan=lrat_tester_full(P_0,lrat_klett=[1.0])
                 
 #    beta_fern = fernald(P_1,30,wave,1.0)
 #    sigma_fern=beta_fern*lrat_p1

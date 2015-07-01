@@ -8,6 +8,9 @@ Created on Wed Apr 24 12:08:57 2013
 @author: Paul Cottle
 
 """
+import os,sys,site
+home=os.environ['homepath']
+
 from Tkinter import Tk
 import tkFileDialog
 import re
@@ -19,7 +22,6 @@ from scipy import constants as const
 from copy import deepcopy
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import generic_filter as genfilt
-import os,sys
 import matplotlib.pyplot as plt
 from collections import OrderedDict 
 import h5py 
@@ -40,15 +42,17 @@ class MPL:
         
     def __init__(self,filename=[]):
         
-        self.data = [] #slot for lidar raw data array
-        self.rsq = []  #slot for range corrected, background subtracted data
-        self.NRB = []  #slot for Normalized Relative Backscatter array 
-        self.depolrat = []  #slot fo depol ratio array
-        self.header = []  #slot for header data
-        self.SNR = []
-        self.backscatter = [] #slot for corrected backscatter array
-        self.extinction = []  #slot for extinction array
-        self.scenepanel = []  #slot for panel containing scene analysis features
+        self.header = None #slot for lidar header data
+        self.data = None #slot for lidar raw data array
+        self.rsq = None  #slot for range corrected, background subtracted data
+        self.NRB = None  #slot for Normalized Relative Backscatter array 
+        self.depolrat = None  #slot fo depol ratio array
+        self.header = None  #slot for header data
+        self.sigma = None   #slot for standard deviation data
+        self.SNR = None     #slot for SNR data
+        self.backscatter = None #slot for corrected backscatter array
+        self.extinction = None  #slot for extinction array
+        self.scenepanel = None  #slot for panel containing scene analysis features
         
 
     def copy(self):
@@ -58,7 +62,7 @@ class MPL:
     
     def append(self,MPLnew):
         
-        if type(self.header) == list:
+        if self.header is None:
             self.header = MPLnew.header
         else:
             maxprofnum = self.header['profnum'][-1]
@@ -66,52 +70,68 @@ class MPL:
             
             self.header = self.header.append(MPLnew.header)
         
-        if not self.data:
+        if self.data is None:
             self.data = MPLnew.data
         else:            
             for n in range(self.header['numchans'][0]):
                 self.data[n] = self.data[n].append(MPLnew.data[n])
         
-        if MPLnew.rsq:
-            if not self.rsq:
+        if MPLnew.rsq is not None:
+            if self.rsq is None:
                 self.rsq = MPLnew.rsq
             else:
                 for n in range(self.header['numchans'][0]):
                     self.rsq[n] = self.rsq[n].append(MPLnew.rsq[n])
 
-        if MPLnew.NRB:
-            if not self.NRB:
+        if MPLnew.NRB is not None:
+            if self.NRB is None:
                 self.NRB = MPLnew.NRB
             else:
                 for n in range(self.header['numchans'][0]):
                     self.NRB[n] = self.NRB[n].append(MPLnew.NRB[n])
         
-        if MPLnew.depolrat:
-            if not self.depolrat:
+        if MPLnew.depolrat is not None:
+            if self.depolrat is None:
                 self.depolrat = MPLnew.depolrat
             else:
                 self.depolrat[0] = self.depolrat[0].append(MPLnew.depolrat[0])
         
-        if MPLnew.backscatter:
-            if not self.backscatter:
+        if MPLnew.backscatter is not None:
+            if self.backscatter is None:
                 self.backscatter = MPLnew.backscatter
             else:
                 for n in range(self.header['numchans'][0]):
                     self.backscatter[n] = self.backscatter[n].append(MPLnew.backscatter[n])
         
-        if MPLnew.extinction:
-            if not self.extinction:
+        if MPLnew.extinction is not None:
+            if self.extinction is None:
                 self.extinction = MPLnew.extinction
             else:
                 for n in range(self.header['numchans'][0]):
                     self.extinction[n] = self.extinction[n].append(MPLnew.extinction[n])
         
-        if MPLnew.scenepanel:
-            if not self.scenepanel:
+        if MPLnew.scenepanel is not None:
+            if self.scenepanel is None:
                 self.scenepanel = MPLnew.scenepanel
             else:
-                for i in self.scenepanel[0].items:
-                    self.scenepanel[0][i] = self.scenepanel[0][i].append(MPLnew.scenepanel[0][i])
+                for n in range(len(self.scenepanel)):
+                    for i in self.scenepanel[n].items:
+                        self.scenepanel[n][i] = self.scenepanel[n][i].append(MPLnew.scenepanel[n][i])
+        
+        if MPLnew.sigma is not None:
+            if self.sigma is None:
+                self.sigma = MPLnew.sigma
+            else:
+                for key in self.sigma:
+                    self.sigma[key]=self.sigma[key].append(MPLnew.sigma[key])
+                    
+        if MPLnew.SNR is not None:
+            if self.SNR is None:
+                self.SNR = MPLnew.SNR
+            else:
+                for key in self.SNR:
+                    self.SNR[key]=self.SNR[key].append(MPLnew.SNR[key])            
+        
         return self
     
     def fromMPL(self, filename):
@@ -254,8 +274,13 @@ class MPL:
             
         df_copol = pan.DataFrame.from_dict(profdat_copol,orient = 'index')
         df_copol.columns = altrange
+        #minimum usable altitude is 150m for overlap reasons
+        if altrange[0]<=150.0:
+            df_copol=df_copol.loc[:,150.0:]
         df_crosspol = pan.DataFrame.from_dict(profdat_crosspol,orient = 'index')
         df_crosspol.columns = altrange
+        if altrange[0]<=150.0:
+            df_crosspol=df_crosspol.loc[:,150.0:]
         df_header = pan.DataFrame.from_dict(header, orient = 'index')
                 
         self.data = [df_copol, df_crosspol]
@@ -307,6 +332,7 @@ class MPL:
         try:
             copoldat_ext=pan.read_hdf(filename,'copol_extinction')
             crosspoldat_ext=pan.read_hdf(filename,'crosspol_extinction')
+            self.extinction=[copoldat_ext,crosspoldat_ext]
         except KeyError:
             if verbose:
                 print "Warning: No Extinction file"
@@ -316,6 +342,50 @@ class MPL:
         except KeyError:
             if verbose:
                 print "Warning: No Scene Analysis file"
+                
+        sigmadict={}
+        try:            
+            tempsigma_copol=pan.read_hdf(filename,'sigma_copol_data')
+            tempsigma_depol=pan.read_hdf(filename,'sigma_crosspol_data')
+            sigmadict['data']=[tempsigma_copol,tempsigma_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-data file"
+        try:            
+            tempsigma_copol=pan.read_hdf(filename,'sigma_copol_rsq')
+            tempsigma_depol=pan.read_hdf(filename,'sigma_crosspol_rsq')
+            sigmadict['rsq']=[tempsigma_copol,tempsigma_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-rsq  file"
+        try:            
+            tempsigma_copol=pan.read_hdf(filename,'sigma_copol_NRB')
+            tempsigma_depol=pan.read_hdf(filename,'sigma_crosspol_NRB')
+            sigmadict['NRB']=[tempsigma_copol,tempsigma_depol]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-NRB file"                
+        try:            
+            tempsigma=pan.read_hdf(filename,'sigma_depolrat')
+            sigmadict['depolrat']=[tempsigma]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-depolrat file"
+        try:            
+            tempsigma_copol=pan.read_hdf(filename,'sigma_copol_backscatter')
+            tempsigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_backscatter')
+            sigmadict['backscatter']=[tempsigma_copol,tempsigma_crosspol]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-backscatter file"
+        try:            
+            tempsigma_copol=pan.read_hdf(filename,'sigma_copol_extinction')
+            temp_sigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_extinction')
+            sigmadict['extinction']=[tempsigma_copol,temp_sigma_crosspol]
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-extinction file"
+                
         SNRdict={}
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_data')
@@ -370,45 +440,45 @@ class MPL:
         
         store['header'] = self.header
         
-        if self.data:
+        if self.data is not None:
             df_copol = self.data[0]
             df_crosspol = self.data[1]
             store['copol_raw'] = df_copol
             store['crosspol_raw'] = df_crosspol
         
-        if self.rsq:
+        if self.rsq is not None:
             df_copol = self.rsq[0]
             df_crosspol = self.rsq[1]
             store['copol_rsq'] = df_copol
             store['crosspol_rsq'] = df_crosspol
         
-        if self.NRB:
+        if self.NRB is not None:
             df_copol = self.NRB[0]
             df_crosspol = self.NRB[1]
             store['copol_NRB'] = df_copol
             store['crosspol_NRB'] = df_crosspol
         
-        if self.depolrat:
+        if self.depolrat is not None:
             df_depolrat = self.depolrat[0]
             store['depolrat'] = df_depolrat
         
-        if self.backscatter:
+        if self.backscatter is not None:
             df_backscatter_copol = self.backscatter[0]
             df_backscatter_crosspol = self.backscatter[1]
             store['copol_backscatter'] = df_backscatter_copol
             store['crosspol_backscatter'] = df_backscatter_crosspol
         
-        if self.extinction:
+        if self.extinction is not None:
             df_extinction_copol = self.extinction[0]
             df_extinction_crosspol = self.extinction[1]
             store['copol_extinction'] = df_extinction_copol
             store['crosspol_extinction'] = df_extinction_crosspol
         
-        if self.scenepanel:
+        if self.scenepanel is not None:
             scenepanel = self.scenepanel[0]
             store['scenepanel'] = scenepanel
             
-        if self.SNR:
+        if self.SNR is not None:
             for k,v in self.SNR.iteritems():
                 if len(v)==2:
                     savename1='SNR_copol_{0}'.format(k)
@@ -422,9 +492,24 @@ class MPL:
                     tempdf_copol=v[0]
                     store[savename]=tempdf_copol
         
+        if self.sigma is not None:
+            for k,v in self.sigma.iteritems():
+                if len(v)==2:
+                    savename1='sigma_copol_{0}'.format(k)
+                    savename2='sigma_crosspol_{0}'.format(k)
+                    tempdf_copol=v[0]
+                    tempdf_crosspol=v[1]
+                    store[savename1]=tempdf_copol
+                    store[savename2]=tempdf_crosspol
+                else:
+                    savename='sigma_{0}'.format(k)
+                    tempdf_copol=v[0]
+                    store[savename]=tempdf_copol
+        
         store.close()
     
     def save_to_IDL(self,filename):
+        #needs updating to include new attributes SNR and sigma
         def datetime_to_epoch(d):
             epoch=np.datetime64(datetime.datetime(1970,1,1))
             t=(d-epoch)/np.timedelta64(1,'s')
@@ -532,7 +617,7 @@ class MPL:
                 tempcrosspol.create_dataset('altitude',data=df_crosspol.columns.values)
                 tempcrosspol.create_dataset('values',data=df_crosspol.values)
     
-    def alt_resample(self,altrange,verbose=False):
+    def alt_resample(self,altrange,sigma_winsize=10,SNR_winsize=10,verbose=False):
         #takes a pandas dataframe generated by mplreader and resamples on regular
         #intervals in altitude and resets the limits of the set
         #note: limits of altrange must be within original limits of altitude data
@@ -548,7 +633,7 @@ class MPL:
         self.data=templist
         
         #resample range corrected data
-        if self.rsq:
+        if self.rsq is not None:
             templist=[]
             for dftemp in self.rsq:            
                 templist.append(resample_cols(dftemp,altrange,verbose))
@@ -558,7 +643,7 @@ class MPL:
                 print "No Range-Squared Profiles"
         
         #resample NRB data
-        if self.NRB:
+        if self.NRB is not None:
             templist=[]
             for dftemp in self.NRB:            
                 templist.append(resample_cols(dftemp,altrange,verbose))
@@ -567,7 +652,7 @@ class MPL:
             if verbose:
                 print "No NRB Profiles"
         
-        if self.depolrat:       
+        if self.depolrat is not None:       
             templist=[]
             for dftemp in self.depolrat:            
                 templist.append(resample_cols(dftemp,altrange,verbose))
@@ -576,7 +661,7 @@ class MPL:
             if verbose:
                 print "No Depol Ratio Profiles" 
 
-        if self.backscatter:       
+        if self.backscatter is not None:       
             templist=[]
             for dftemp in self.backscatter:
                 templist.append(resample_cols(dftemp,altrange,verbose))
@@ -585,7 +670,7 @@ class MPL:
             if verbose:
                 print "No Backscatter Profiles"
 
-        if self.extinction:       
+        if self.extinction is not None:       
             templist=[]
             for dftemp in self.extinction:
                 templist.append(resample_cols(dftemp,altrange,verbose))                    
@@ -594,7 +679,7 @@ class MPL:
             if verbose:
                 print "No Extinction Profiles"
 
-        if self.scenepanel:
+        if self.scenepanel is not None:
             paneldict={}
             for i in self.scenepanel[0].items:
                 dftemp = self.scenepanel[0].loc[i]
@@ -603,7 +688,13 @@ class MPL:
         else:
             if verbose:
                 print "No Scene Analysis"
-                
+        
+        if self.sigma is not None:
+            self.calculate_sigma(winsize=10)
+        
+        if self.SNR is not None:
+            self.calculate_SNR(winsize=10)
+            
         if verbose:
             print '... Done!'
                     
@@ -614,7 +705,8 @@ class MPL:
         
         return self
     
-    def time_resample(self, timestep=[], starttime=[],endtime=[], datamethod = 'mean',verbose=False):
+    def time_resample(self, timestep=None, starttime=None,endtime=None, datamethod = 'mean',
+                      sigma_winsize=10,SNR_winsize=10,verbose=False):
         #resamples a pandas dataframe generated by mplreader on a regular timestep
         #and optionally limits it to a preset time range
         #timestep must be in timeSeries period format: numF where num=step size and
@@ -622,11 +714,11 @@ class MPL:
         
         temphead = {}
         self.header.sort_index(inplace=True)
-        if starttime:
+        if starttime is not None:
             self.header = self.header.loc[self.header.index>=starttime]
-        if endtime:
+        if endtime is not None:
             self.header = self.header.loc[self.header.index<=endtime]
-        if timestep:
+        if timestep is not None:
             for col in self.header:           
                 sumcols = ['shotsum']
                 firstcols = ['unitnum','version','numchans','scanflag','version','mcs','systype','numchans']
@@ -654,89 +746,99 @@ class MPL:
         
         templist=[]        
         for dftemp in self.data:                
-            if starttime:
+            if starttime is not None:
                 dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-            if endtime:
+            if endtime is not None:
                 dftemp = dftemp.loc[dftemp.index<=endtime]  
-            if timestep:
+            if timestep is not None:
                 dftemp = dftemp.resample(timestep, how = datamethod)
             templist.append(dftemp)
         self.data=templist
     
-        if self.rsq:
+        if self.rsq is not None:
             templist=[]        
             for dftemp in self.rsq:                
-                if starttime:
+                if starttime is not None:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
+                if endtime is not None:
                     dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
+                if timestep is not None:
                     dftemp = dftemp.resample(timestep, how = datamethod)
                 templist.append(dftemp)
             self.rsq=templist
 
-        if self.NRB:
+        if self.NRB is not None:
             templist=[]        
             for dftemp in self.NRB:                
-                if starttime:
+                if starttime is not None:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
+                if endtime is not None:
                     dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
+                if timestep is not None:
                     dftemp = dftemp.resample(timestep, how = datamethod)
                 templist.append(dftemp)
             self.NRB=templist
 
-        if self.depolrat:
+        if self.depolrat is not None:
             templist=[]        
             for dftemp in self.depolrat:                
-                if starttime:
+                if starttime is not None:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
+                if endtime is not None:
                     dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
+                if timestep is not None:
                     dftemp = dftemp.resample(timestep, how = datamethod)
                 templist.append(dftemp)
             self.depolrat=templist
             
-        if self.backscatter:
+        if self.backscatter is not None:
             templist=[]        
             for dftemp in self.backscatter: 
-                if starttime:
+                if starttime is not None:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
+                if endtime is not None:
                     dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
+                if timestep is not None:
                     dftemp = dftemp.resample(timestep, how = datamethod)
                 templist.append(dftemp)
             self.backscatter=templist
         
-        if self.extinction:
+        if self.extinction is not None:
             templist=[]        
             for dftemp in self.extinction: 
-                if starttime:
+                if starttime is not None:
                     dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
+                if endtime is not None:
                     dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
+                if timestep is not None:
                     dftemp = dftemp.resample(timestep, how = datamethod)
                 templist.append(dftemp)
             self.extinction=templist
         
-        if self.scenepanel:
-            paneltemp=pan.Panel()
-            for i in self.scenepanel[0].items:
-                dftemp=self.scenepanel[0].loc[i]
-                if starttime:
-                    dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
-                if endtime:
-                    dftemp = dftemp.loc[dftemp.index<=endtime]  
-                if timestep:
-                    dftemp = dftemp.resample(timestep, how ='ffill')
-                paneltemp.loc[i]=dftemp
-            self.scenepanel=[paneltemp]
+        if self.scenepanel is not None:
+            templist=[]
+            for paneltemp in self.scenepanel:
+                panelout=pan.Panel(items=paneltemp.items,major_axis=paneltemp.major_axis,
+                                   minor_axis=paneltemp.minor_axis)
+                for i in paneltemp.items:
+                    dftemp=paneltemp[i]
+                    if starttime is not None:
+                        dftemp = dftemp.loc[dftemp.index>=starttime]                                                     
+                    if endtime is not None:
+                        dftemp = dftemp.loc[dftemp.index<=endtime]  
+                    if timestep is not None:
+                        dftemp = dftemp.resample(timestep, how ='ffill')
+                    panelout[i]=dftemp
+                templist.append(panelout)
+            self.scenepanel=templist
         if verbose:
             print '... Done!'
+        
+        if self.sigma:
+            self.calculate_sigma(winsize=sigma_winsize)
+        
+        if self.SNR:
+            self.calculate_SNR(winsize=SNR_winsize)
                 
         return self
         
@@ -746,14 +848,14 @@ class MPL:
         bg = [self.header['bg_avg2'],self.header['bg_avg1']]
       
         for n in range(self.header['numchans'][0]): 
-            rsq = (np.array(dataout[n].columns, dtype=float)/1000)**2
+            rsq = (np.array(dataout[n].columns, dtype=float)/1000.0)**2
             for i in self.data[n].index:
                 dataout[n].ix[i] = (self.data[n].ix[i] - bg[n].ix[i])*rsq
         
         self.rsq = dataout        
         return self
         
-    def calculate_NRB(self, showplots = False):
+    def calculate_NRB(self, showplots = False,verbose=False):
         
         """
         Extracts data from MPL calibration files and applies it
@@ -769,6 +871,9 @@ class MPL:
         version=np.int(self.header['version'][0])
         unitnum=np.int(self.header['unitnum'][0])
         
+        if verbose:
+            print "Calculating NRB"
+            
         if unitnum==5004:
             deadtimefile = os.path.join(topdir,'deadtimepoly_5004.bin')
             overlapfile = os.path.join(topdir,'MiniMPL5004_Horizontal_201301141700.bin')
@@ -796,12 +901,12 @@ class MPL:
                 
             coeffs = np.array(deadtimedat[::-1])
             
-            MPLout = deepcopy(self.data)
+            NRBout = deepcopy(self.data)
             
             if showplots:
                 temp = self.data[0].values
                 maxval = temp.max()
-                numsteps = maxval/100.
+                numsteps = maxval/100.0
                 x = np.arange(0,maxval,numsteps)
                 y = np.polynomial.polynomial.polyval(x, coeffs)
                 fig = plt.figure()
@@ -810,15 +915,15 @@ class MPL:
                 ax.plot(x,y)
                 ax.tick_params(axis='both', which='major', labelsize=20)
                 ax.set_title('Deadtime Correction Curve',fontsize=30)
-                ax.set_xlabel('Counts [DN]',fontsize=25,labelpad=15)
+                ax.set_xlabel('Signal [mJ]',fontsize=25,labelpad=15)
                 ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
                 plt.show()
             
             
-            deadtimecor = np.empty([self.header['numchans'][0],len(MPLout[0].index),len(MPLout[0].columns)])
+            deadtimecor = np.empty([self.header['numchans'][0],len(NRBout[0].index),len(NRBout[0].columns)])
             for n in range(self.header['numchans'][0]):
-                for i in range(len(MPLout[n].index)):
-                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
+                for i in range(len(NRBout[n].index)):
+                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(NRBout[n].iloc[i],coeffs)
                   
             with open(afterpulsefile, 'rb') as binfile:
                 afterpulsedat = array.array('d')
@@ -847,11 +952,11 @@ class MPL:
             bg = [self.header['bg_avg2'],self.header['bg_avg1']]
               
             for n in range(self.header['numchans'][0]):
-                altvals = np.array(MPLout[n].columns, dtype='float')
+                altvals = np.array(NRBout[n].columns, dtype='float')
                 interp_afterpulse = np.interp(altvals,aprange,apvals)
                 
-                for i in range(len(MPLout[n].index)):
-                    MPLout[n].iloc[i] = MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i]
+                for i in range(len(NRBout[n].index)):
+                    NRBout[n].iloc[i] = (NRBout[n].iloc[i] - bg[n][i])*deadtimecor[n,i] - interp_afterpulse
                     
             with open(overlapfile, 'rb') as binfile:
                 overlapdat = array.array('d')
@@ -861,7 +966,7 @@ class MPL:
                 overlapdat.fromfile(binfile,numvals)
             
             numpairs = numvals/2
-            overrange = np.array(overlapdat[:numpairs])*1000
+            overrange = np.array(overlapdat[:numpairs])*1000.0
             overvals = np.array(overlapdat[numpairs:])    
         
             if showplots:
@@ -876,7 +981,7 @@ class MPL:
                 
             energy = self.header['energy']
             
-            altvals = np.array(MPLout[0].columns, dtype='float')
+            altvals = np.array(NRBout[0].columns, dtype='float')
             interp_overlap = np.interp(altvals,overrange,overvals)
                 
             for v in range(len(altvals)):
@@ -884,11 +989,11 @@ class MPL:
                     interp_overlap[v] = 1.0
             
             for n in range(self.header['numchans'][0]):     
-                rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2
-                for i in range(len(MPLout[n].index)):
-                    MPLout[n].iloc[i] = (MPLout[n].iloc[i]/(interp_overlap*energy[i]))*rsq
+                rsq = (np.array(NRBout[n].columns, dtype=float)/1000.0)**2
+                for i in range(len(NRBout[n].index)):
+                    NRBout[n].iloc[i] = (NRBout[n].iloc[i]/(interp_overlap*energy[i]))*rsq
             
-            self.NRB = MPLout
+            self.NRB = NRBout
             return self
         elif unitnum==5004 or unitnum==5012: 
             with open(deadtimefile,'rb') as binfile:
@@ -901,7 +1006,7 @@ class MPL:
                 
             coeffs = np.array(deadtimedat[::-1])
             
-            MPLout = deepcopy(self.data)
+            NRBout = deepcopy(self.data)
             
             if showplots:
                 temp = self.data[0].values
@@ -915,15 +1020,15 @@ class MPL:
                 ax.plot(x,y)
                 ax.tick_params(axis='both', which='major', labelsize=20)
                 ax.set_title('Deadtime Correction Curve',fontsize=30)
-                ax.set_xlabel('Altitude [m]',fontsize=25,labelpad=15)
+                ax.set_xlabel('Signal [mJ]',fontsize=25,labelpad=15)
                 ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
                 plt.show()
             
             
-            deadtimecor = np.empty([self.header['numchans'][0],len(MPLout[0].index),len(MPLout[0].columns)])
+            deadtimecor = np.empty([self.header['numchans'][0],len(NRBout[0].index),len(NRBout[0].columns)])
             for n in range(self.header['numchans'][0]):
-                for i in range(len(MPLout[n].index)):
-                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(MPLout[n].iloc[i],coeffs)
+                for i in range(len(NRBout[n].index)):
+                    deadtimecor[n,i,:] = np.polynomial.polynomial.polyval(NRBout[n].iloc[i],coeffs)
         
             with open(afterpulsefile, 'rb') as binfile:
                 aprange = array.array('d')  #array of range values
@@ -942,7 +1047,8 @@ class MPL:
                 apenergy = struct.unpack('d',temp)[0] #laser energy during calibration in uJ
                 
                 if apversion != 3:
-                    print 'WARNING!  This version of calibration file might be incompatible!'
+                    if verbose:
+                        print 'WARNING!  This version of calibration file might be incompatible!'
                 
                    
                 if apnumchan == 2:
@@ -952,7 +1058,7 @@ class MPL:
                     apbg_crosspol = struct.unpack('d',temp)[0]
                     
                     aprange.fromfile(binfile,apnumbins)
-                    aprange = [n*1000 for n in aprange] # convert range values to meters
+                    aprange = [n*1000.0 for n in aprange] # convert range values to meters
                     apvals_copol.fromfile(binfile,apnumbins)
                     copol_norm = [n/apenergy for n in apvals_copol] #convert to counts/us
                     apvals_crosspol.fromfile(binfile,apnumbins)
@@ -960,7 +1066,8 @@ class MPL:
                     apbg = [apbg_copol,apbg_crosspol]
                     apvals = [copol_norm,crosspol_norm]
                 else:
-                    print "Warning - wrong number of channels detected!"
+                    if verbose:
+                        print "Warning - wrong number of channels detected!"
             
             if showplots:
                 fig = plt.figure()
@@ -978,11 +1085,11 @@ class MPL:
             energy= self.header['energy']
             
             for n in range(apnumchan):
-                altvals = np.array(MPLout[n].columns, dtype='float') #data altitudes in m
+                altvals = np.array(NRBout[n].columns, dtype='float') #data altitudes in m
                 interp_afterpulse = np.interp(altvals,aprange,apvals[n])
                 
-                for i in range(len(MPLout[n].index)):
-                    MPLout[n].iloc[i] = (MPLout[n].iloc[i]*deadtimecor[n,i] - interp_afterpulse - bg[n][i])/energy[i]
+                for i in range(len(NRBout[n].index)):
+                    NRBout[n].iloc[i] = ((NRBout[n].iloc[i] - bg[n][i])*deadtimecor[n,i] - interp_afterpulse)/energy[i]
             
         with open(overlapfile, 'rb') as binfile:
             overlapdat = array.array('d')
@@ -993,7 +1100,7 @@ class MPL:
 
         
         numpairs = numvals/2
-        overrange = np.array(overlapdat[:numpairs])*1000
+        overrange = np.array(overlapdat[:numpairs])*1000.0
         overvals = np.array(overlapdat[numpairs:])    
     
         if showplots:
@@ -1006,7 +1113,7 @@ class MPL:
             ax.set_ylabel('Correction Factor',fontsize=25,labelpad=15)
             plt.show()
 
-        altvals = np.array(MPLout[0].columns, dtype='float')
+        altvals = np.array(NRBout[0].columns, dtype='float')
         interp_overlap = np.interp(altvals,overrange,overvals)
             
         for v in range(len(altvals)):
@@ -1014,26 +1121,111 @@ class MPL:
                 interp_overlap[v] = 1.0
         
         for n in range(self.header['numchans'][0]):     
-            rsq = (np.array(MPLout[n].columns, dtype=float)/1000)**2  #range in km for rsquared correction
-            for i in range(len(MPLout[n].index)):
-                MPLout[n].iloc[i] = MPLout[n].iloc[i]*rsq/interp_overlap 
-                MPLout[n].iloc[i][:100]=0.0 #zero out below usable range threshold at 100m
+            rsq = (np.array(NRBout[n].columns, dtype=float)/1000.0)**2  #range in km for rsquared correction
+            for i in range(len(NRBout[n].index)):
+                NRBout[n].iloc[i] = NRBout[n].iloc[i]*rsq/interp_overlap         
+        self.NRB = NRBout
         
-        self.NRB = MPLout
+        if verbose:
+            print "NRB calculation complete!"
+        
         return self
     
-    def calculate_depolrat(self): 
-        copol = self.NRB[0]
-        crosspol = self.NRB[1]
+    def calculate_depolrat(self,method='NRB',verbose=False):
+        if verbose:
+            print "Calculating Depolarization Ratio"
+            
+        if method=='NRB':
+            copol = self.NRB[0]
+            crosspol = self.NRB[1]
+        elif method=='data':
+            copol = self.data[0]
+            crosspol = self.data[1]
+        elif method=='rsq':
+            copol = self.rsq[0]
+            crosspol = self.rsq[1]
         
         depolMPL = (crosspol/copol).fillna(0.0)
         
         depolvals = (depolMPL/(depolMPL+1)).fillna(0.0)
         self.depolrat = [depolvals]
         
+        if verbose:
+            print "Depolarization ratio calculation complete!"
+        
+        return self
+#    
+    def calculate_sigma(self,winsize=10,verbose=False, datatypes=['all']):
+        """
+        Calculates stnadard deviations for mpl data
+        
+        inputs:
+        num profs = number of vertical profiles to average together, defaults to 1
+        datatypes = list of data types to callculate sigma for.  Could be 
+                    'raw','rsq','NRB','depolrat', or 'all'
+        
+        output:
+        self.sigma = a dict of pandas dataframes with datatype keys containing 
+                    standard deviation values
+        
+        """
+        
+        if verbose:
+            print "Calculating sigma"
+        
+        datasets=[]
+        sigmadict={}
+            
+        for d in datatypes:
+            if d=='data' or d=='all':
+                datasets.append(('data',self.data))
+            if d=='rsq' or d=='all':
+                if self.rsq:
+                    datasets.append(('rsq',self.rsq))
+                elif verbose:
+                    print "No RSQ data available for SNR calc"
+            if d=='NRB' or d=='all':
+                if self.NRB:
+                    datasets.append(('NRB',self.NRB))
+                elif verbose:
+                    print "No NRB data available for SNR calc"
+            if d=='depolrat' or d=='all':
+                if self.depolrat:
+                    datasets.append(('depolrat',self.depolrat))
+                elif verbose:
+                    print "No depolrat available for SNR calc"
+#            if d=='backscatter' or d=='all':
+#                if self.backscatter:
+#                    datasets.append(('backscatter',self.backscatter))
+#                elif verbose:
+#                    print "No Backscatter available for SNR calc"
+#            if d=='extinction' or d=='all':
+#                if self.extinction:
+#                    datasets.append(('extinction',self.extinction))
+#                elif verbose:
+#                    print "No extinction available for SNR calc"
+        
+        for dset_name,dset in datasets: 
+            sigmadict[dset_name] = []
+            if verbose:
+                print "Calculating sigma values for {0}".format(dset_name)
+            for n in range(len(dset)): 
+                if dset_name=='data':                    
+                    tempdat=dset[n]
+                else:
+                    tempdat=dset[n].mul((dset[n].columns.values/1000.0)**2,axis=1)  #other datasets have been r-squared corrected, and this effect must be cancelled out
+                stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,
+                                       columns=tempdat.columns)
+                sigmadict[dset_name].append(stdarray)
+                
+        self.sigma=sigmadict
+
+        if verbose:
+            print "Sigma calculation done!"
+            
         return self
     
-    def calculate_SNR(self,bg_alt=[],numprofs=1,winsize=10,verbose=False, datatypes=['all']):
+    def calculate_SNR(self,bg_alt=None,winsize=10,verbose=False, datatypes=['all']):
         """
         Calculates signal to noise ratios for mpl data
         
@@ -1057,6 +1249,7 @@ class MPL:
         
         datasets=[]
         SNRdict={}
+            
         for d in datatypes:
             if d=='data' or d=='all':
                 datasets.append(('data',self.data))
@@ -1075,40 +1268,40 @@ class MPL:
                     datasets.append(('depolrat',self.depolrat))
                 elif verbose:
                     print "No depolrat available for SNR calc"
-            if d=='backscatter' or d=='all':
-                if self.backscatter:
-                    datasets.append(('backscatter',self.backscatter))
-                elif verbose:
-                    print "No Backscatter available for SNR calc"
-            if d=='extinction' or d=='all':
-                if self.extinction:
-                    datasets.append(('extinction',self.extinction))
-                elif verbose:
-                    print "No extinction available for SNR calc"
+#            if d=='backscatter' or d=='all':
+#                if self.backscatter:
+#                    datasets.append(('backscatter',self.backscatter))
+#                elif verbose:
+#                    print "No Backscatter available for SNR calc"
+#            if d=='extinction' or d=='all':
+#                if self.extinction:
+#                    datasets.append(('extinction',self.extinction))
+#                elif verbose:
+#                    print "No extinction available for SNR calc"
         
         for dset_name,dset in datasets: 
             SNRdict[dset_name] = []
             for n in range(len(dset)): 
                 tempdat=dset[n]
-                if not bg_alt:
-                    bg_alt=tempdat.columns[-100]
-                
                 if dset_name=='data':
+                    if not bg_alt:
+                        bg_alt=tempdat.columns[-10]
                     SNRtemp=pan.DataFrame(np.empty_like(tempdat.values),index=tempdat.index,columns=tempdat.columns)
                     for i in tempdat.index:
-                        tempprof=tempdat.ix[i]
-                    
+                        tempprof=tempdat.ix[i]                    
                         tempback=bg[n].ix[i]
                         tempvals=tempprof[bg_alt:].dropna()
                         sigmatemp=np.std(tempvals)
                         Ctemp=sigmatemp/np.mean(np.sqrt(np.abs(tempvals)))
                         SNR = lambda x: (x-tempback)/(Ctemp*np.sqrt(np.abs(x)))
                         SNRprof=np.array([SNR(v) for v in tempprof.values]).clip(0)
-                    
                         SNRtemp.ix[i]=SNRprof
-                else:
-                    stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,columns=tempdat.columns)
-                    meanarray=pan.DataFrame(genfilt(tempdat,np.mean,winsize),index=tempdat.index,columns=tempdat.columns)
+                else:   
+                    tempdat=dset[n].mul((dset[n].columns.values/1000.0)**2,axis=1)  #other datasets have been r-squared corrected, and this effect must be cancelled out
+                    stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,
+                                           columns=tempdat.columns)
+                    meanarray=pan.DataFrame(genfilt(tempdat,np.mean,winsize),index=tempdat.index,
+                                            columns=tempdat.columns)
                     SNRtemp=(meanarray/stdarray).fillna(0.0)
                 SNRdict[dset_name].append(SNRtemp)
                 
@@ -1119,21 +1312,24 @@ class MPL:
             
         return self
     
-    def calc_all(self,showplots=False):
+    def calc_all(self,bg_alt=None,depol_method='NRB',winsize=10,showplots=False,verbose=False):
         """
         calculates all uncalculated fields for an mpl object
         """
-        if not self.rsq:
+        if self.rsq is None:
             self.range_cor()
         
-        if not self.NRB:
-            self.calculate_NRB(showplots=showplots)
+        if self.NRB is None:
+            self.calculate_NRB(showplots=showplots,verbose=verbose)
         
-        if not self.depolrat:
-            self.calculate_depolrat()
+        if self.depolrat is None:
+            self.calculate_depolrat(method=depol_method,verbose=verbose)
         
-        if not self.SNR:
-            self.calculate_SNR()
+        if self.sigma is None:
+            self.calculate_sigma(winsize=winsize,verbose=verbose)
+            
+        if self.SNR is None:
+            self.calculate_SNR(bg_alt=bg_alt,winsize=winsize,verbose=verbose)
         
         return self
    
@@ -1190,7 +1386,7 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
         print "You didn't open anything!"  
         return
         
-    if isinstance(filenames,list): return filenames
+    if isinstance(filenames,list) or isinstance(filenames,tuple): return filenames
 
     #http://docs.python.org/library/re.html
     #the re should match: {text and white space in brackets} AND anynonwhitespacetokens
@@ -1213,12 +1409,12 @@ def resample_cols(dfin,newcols,verbose=False,method='interp'):
     maxcol=oldcols[-1]
     
     if mincol>newcols[0]:
-        newcols=newcols[newcols>=mincol]
+        newcols=sorted([c for c in newcols if c>=mincol])
         if verbose:
             print "WARNING: Minimum column value reset to {0}".format(newcols[0])
         
     if maxcol<newcols[-1]:
-        newcols=newcols[newcols<=maxcol]
+        newcols=sorted([c for c in newcols if c<=maxcol])
         if verbose:
             print "WARNING: Maximum column value reset to {0}".format(newcols[-1])
     
@@ -1394,6 +1590,319 @@ def MPLtoHDF(filename, appendflag = 'False'):
     store['header'] = df_header
     store.close()
 
+def partdepolratcalc(depolin,beta_parallel,beta_mol,moldepolrat=0.0035):
+    
+    #default moldepolrat: narrow double filter allows only Cabannes line (see SPIE proc reference)
+    A = moldepolrat/(1+moldepolrat)
+    partdepolrat=(depolin*beta_parallel-A*beta_mol)/(beta_parallel-A*beta_mol)
+    
+    return partdepolrat
+
+def buffered_array(data,(x,y)):
+
+    #create buffer around dataframe
+    datashape = np.shape(data)
+    
+    b = int(np.ceil(y/2))
+    t = y-b
+    
+    if len(datashape)==1:
+        rows=datashape[0]
+        newsize=(rows+y)
+        newarray=np.empty(newsize)
+        (newrows)=newarray.shape
+        newarray[b:-t]=data
+        newarray[:b]=data[:b]
+        newarray[-t:]=data[-t:]
+        
+    else:
+        rows=datashape[0]
+        columns=datashape[1]    
+        #simply copy first and last values to fill in buffers
+        if x > 1:
+            l = int(np.ceil(x/2))
+            r = x-l
+            newsize=(rows+x,columns+y)
+            newarray=np.empty(newsize)
+            (newrows,newcolums)=newarray.shape
+            newarray[:l,b:-t]=data[0,:]
+            newarray[l:-r,b:-t]=data
+            newarray[-r:,b:-t]=data[-1,:]
+        else:
+            l=0
+            r=0
+            newsize=(rows,columns+y)
+            newarray=np.empty(newsize)
+            (newrows,newcolums)=newarray.shape
+            newarray[:,b:-t]=data
+    
+        newarray[:,:b]=newarray[:,b:2*b]
+        newarray[:,-t:]=newarray[:,-2*t:-t] 
+    
+    return newarray
+
+
+    
+def slopecalc(prof, winsize = 5):
+
+    """
+    Calculates slope of data for a single profile using a smoothing window of
+    predetermined size
+    
+    inputs:
+    prof:  a pandas series where index is altitude
+    n:  number of consecutive values to use to calculate slope
+    
+    output:
+    slope: output series,same size as input,with profile slopes
+    """
+    data = prof.values
+    altrange = prof.index
+    
+    numvals = len(data)
+    
+    #calculate slopes of profile
+      
+    slopevals = np.empty_like(data)
+    if winsize < 2:
+        print "Sorry, need at least two values to calculate slope!"
+        return
+    elif winsize == 2:
+        for i in range(numvals-1):
+            slopevals[i] = (data[i+1]-data[i])/(altrange[i+1]-altrange[i])
+        slopevals[-1] = slopevals[-2]
+    else:
+        #set up empty arrays for calculating slope with buffers on each end
+        tempdat = np.empty(numvals+winsize)
+        tempalt = np.empty_like(tempdat)
+        #define buffer widths on left and right
+        l = int(np.ceil(winsize/2))
+        r = winsize-l
+        #populate central segment with data and altrange
+        tempdat[l:r] = data
+        tempalt[l:r] = altrange
+        #define window values for filling data and index buffers 
+        lwinvals = data[:winsize]
+        lwindex = altrange[:winsize]
+        rwinvals = data[-winsize:]
+        rwindex = altrange[-winsize:]
+        #determine slope and intercept for left and right data windows      
+        LA = np.array([lwindex,np.ones(winsize)])
+        [lint,lslope]=np.linalg.lstsq(LA.T,lwinvals)
+        RA = np.array([rwindex,np.ones(winsize)])
+        [rint,rslope]=np.linalg.lstsq(RA.T,rwinvals)
+        #calculate altitude index values for left and right buffers
+        laltstep = altrange[1]-altrange[0]
+        raltstep = altrange[-1]-altrange[-2]
+        lold=altrange[0]
+        rold=altrange[-1]
+        for n in np.arange(l)[::-1]:
+            tempalt[n]=lold-laltstep
+            lold=tempalt[n]
+        for m in np.arange(r):
+            tempalt[m]=rold+raltstep
+            rold=tempalt[m]
+        #fill in data buffers
+        tempdat[:l]=lint+lslope*tempalt[:l]
+        tempdat[-r:]=rint+rslope*tempalt[-r:]
+        
+        #use linear regression to calculate slopes for sliding windows
+        for v in range(numvals):
+            windat = tempdat[v:v+winsize]
+            winalt = tempalt[v:v+winsize]
+            A = np.array([winalt,np.ones(winsize)])
+            [inter,slopevals[v]]=np.linalg.lstsq(A.T,windat)
+        
+    slope = pan.Series(data=slopevals,index=altrange)
+    return slope 
+
+def SNR_mask_depol(mplin,**kwargs):
+    
+    SNRthreshold=kwargs.get('SNRthreshold',3)
+    numprofs=kwargs.get('numprofs',1)
+    bg_alt=kwargs.get('bg_alt',None)
+    nopassval=kwargs.get('nopassval',float('nan'))
+    inplace=kwargs.get('inplace',False)
+    recalc=kwargs.get('recalc',False)
+    datatype=kwargs.get('datatype','NRB')
+    
+    if recalc or not mplin.SNR:
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
+  
+    #start by creating mask where areas that fall below SNRthreshold are zeroed out
+    SNRmask = mplin.SNR[datatype][0]>=SNRthreshold
+    
+    if inplace:
+        mplout=mplin
+    else:
+        mplout=deepcopy(mplin)
+           
+    if mplout.depolrat:
+        mplout.depolrat[0]=mplin.depolrat[0]*SNRmask
+        mplout.depolrat[0].replace(0,nopassval,inplace=True)
+    return mplout 
+
+def SNR_mask_colors(mplin,**kwargs):
+    
+    SNRthreshold=kwargs.get('SNRthreshold',3)
+    numprofs=kwargs.get('numprofs',1)
+    bg_alt=kwargs.get('bg_alt',None)
+    nopassval=kwargs.get('nopassval',-9999)
+    inplace=kwargs.get('inplace',False)
+    recalc=kwargs.get('recalc',False)
+    datatype=kwargs.get('datatype','NRB')
+    
+    if recalc or not mplin.SNR:
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
+  
+    #start by creating mask where areas that fall below SNRthreshold are zeroed out
+    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)|(mplin.scenepanel[0]['Type']=='Clear Air')
+    SNRmask.replace(False,np.nan,inplace=True)
+    if inplace:
+        mplout=mplin
+    else:
+        mplout=deepcopy(mplin)
+           
+    if mplout.scenepanel:        
+        mplout.scenepanel[0]['colormask']=mplin.scenepanel[0]['colormask']*SNRmask
+        mplout.scenepanel[0]['colormask'].replace(np.nan,nopassval,inplace=True)
+    return mplout 
+    
+def SNR_mask_all(mplin,**kwargs):
+    
+    SNRthreshold=kwargs.get('SNRthreshold',3)
+    numprofs=kwargs.get('numprofs',1)
+    bg_alt=kwargs.get('bg_alt',None)
+    nopassval=kwargs.get('nopassval',float('nan'))
+    inplace=kwargs.get('inplace',False)
+    recalc=kwargs.get('recalc',False)
+    datatype=kwargs.get('datatype','NRB')
+    if recalc or not mplin.SNR:
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=['data'])
+  
+    #start by creating mask where areas that fall below SNRthreshold are zeroed out
+    SNRmask = mplin.SNR[datatype][0]>=SNRthreshold
+    
+    if inplace:
+        mplout=mplin
+    else:
+        mplout=deepcopy(mplin)
+    
+    for n in range(mplout.header['numchans'][0]):
+        mplout.data[n]=mplin.data[n]*SNRmask
+        mplout.data[n].replace(0,nopassval,inplace=True)
+        if mplout.rsq:
+            mplout.rsq[n]=mplin.rsq[n]*SNRmask
+            mplout.rsq[n].replace(0,nopassval,inplace=True)        
+        if mplout.NRB:
+            mplout.NRB[n]=mplin.NRB[n]*SNRmask
+            mplout.NRB[n].replace(0,nopassval,inplace=True)        
+    if mplout.depolrat:
+        mplout.depolrat[0]=mplin.depolrat[0]*SNRmask
+        mplout.depolrat[0].replace(0,nopassval,inplace=True)
+    return mplout  
+    
+def NRB_mask_create(dfin,**kwargs):
+    
+    """
+    generates threshold altitudes to avoids spurious results by removing all 
+    data beyond strong signal spikes
+    
+    """
+    NRBthreshold=kwargs.get('NRBthreshold',3)
+    NRBmin=kwargs.get('NRBmin',0.5)
+    minalt=kwargs.get('minalt',150)
+    numprofs=kwargs.get('numprofs',1)
+    winsize=kwargs.get('winsize',5)
+    
+    #start by creating array of threshold altitudes and masking NRB copol
+    #creates a new array with buffers to account for numprofs, winsize
+    
+    data = dfin.values
+    altrange=dfin.columns.values
+    (rows,columns) = data.shape
+    minalt_index=np.where(altrange>=minalt)[0][0]
+    newarray = buffered_array(data,(numprofs,winsize))
+    (newrows,newcolums) = newarray.shape
+
+    #set default values for cutoff to maximum altitude 
+    threshalts=np.ones(len(dfin.index))*altrange[-1]
+   
+    for r in range(rows):
+        tempprof=np.mean(newarray[r:r+numprofs],axis=0)
+        for c in np.arange(minalt_index,columns):
+            tempval = np.mean(tempprof[c:c+winsize])
+            if tempval >= NRBthreshold:
+                for c2 in np.arange(c,columns):
+                    tempval = np.mean(tempprof[c2:c2+winsize])
+                    if tempval <= NRBmin:
+                        threshalts[r]=altrange[c2]
+                        break 
+    threshseries=pan.Series(data=threshalts,index=dfin.index)
+    return threshseries
+
+def NRB_mask_apply(dfin,threshseries,nopassval=float('nan'),inplace=True):
+    
+    if inplace:
+        dfout=dfin
+    else:
+        dfout=deepcopy(dfin)
+    altvals = dfin.columns.values    
+    for r in dfin.index:
+        tempval=[x for x in altvals if x>=threshseries.ix[r]][0]
+        dfout.ix[r,tempval:]=nopassval
+    return dfout
+
+def NRB_mask_all(MPLin,**kwargs):
+    """
+        uses a list of threshold altitudes, or generates one based on kwargs
+        and applies it to all data sets within an MPL class object
+    """
+    
+    threshseries=kwargs.get('threshseries',[])
+    NRBthreshold=kwargs.get('NRBthreshold',3)
+    NRBmasktype=kwargs.get('NRBmasktype','profile')
+    NRBmin=kwargs.get('NRBmin',0.5)
+    minalt=kwargs.get('minalt',150)
+    numprofs=kwargs.get('numprofs',1)
+    winsize=kwargs.get('winsize',5)
+    nopassval=kwargs.get('nopassval',np.nan)
+    inplace=kwargs.get('inplace',True)
+    
+    if inplace:
+        MPLout=MPLin
+    else:
+        MPLout=deepcopy(MPLin)
+    
+    if not any(threshseries):
+        threshkwargs= {'NRBthreshold':NRBthreshold,'masktype':NRBmasktype,'NRBmin':NRBmin,'minalt':minalt,
+                       'numprofs':numprofs,'winsize':winsize,'nopassval':nopassval}
+        try:
+            threshseries=NRB_mask_create(MPLout.NRB[0],**threshkwargs)
+        except IndexError:
+            print "NRB Mask can only work for MPL class object where NRB has been calculated!"
+            return MPLout
+    
+    for n in range(MPLout.header['numchans'][0]):
+        MPLout.data[n]=NRB_mask_apply(MPLout.data[n],threshseries)
+        
+        if MPLout.rsq:
+            MPLout.rsq[n]=NRB_mask_apply(MPLout.rsq[n],threshseries)
+        if MPLout.NRB:
+            MPLout.NRB[n]=NRB_mask_apply(MPLout.NRB[n],threshseries)
+        if MPLout.backscatter:
+            MPLout.backscatter[n]=NRB_mask_apply(MPLout.backscatter[n],threshseries)
+        if MPLout.extinction:
+            MPLout.extinction[n]=NRB_mask_apply(MPLout.extinction[n],threshseries)
+           
+    if MPLout.depolrat:
+        MPLout.depolrat[0]=NRB_mask_apply(MPLout.depolrat[0],threshseries)
+    
+    if MPLout.scenepanel:
+        for i in MPLout.scenepanel[0].items:
+            MPLout.scenepanel[0][i]=NRB_mask_apply(MPLout.scenepanel[0][i],threshseries)
+     
+    return MPLout
     
 #    def save_to_MPL(self,filename):
 #        #currently not working!
@@ -1513,7 +2022,7 @@ if __name__ == '__main__':
     
     os.chdir('C:\\SigmaMPL\DATA')
     
-    filename = '201312010000.mpl'
+    filename = get_files('Select raw file',filetype=('.mpl','*.mpl'))[0]
     
     print 'Testing MPLtoHDF'
     MPLtoHDF(filename)    
@@ -1530,6 +2039,6 @@ if __name__ == '__main__':
     
     print 'Calculate all corrections'
 #    
-    MPLtest.calc_all(showplots=True)
+    MPLtest.calc_all(verbose=True,showplots=True)
     
-    os.chdir(olddir)
+#    os.chdir(olddir)
