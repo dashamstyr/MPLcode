@@ -213,13 +213,14 @@ def PBL_detect(MPLin,**kwargs):
         except AttributeError:
             templayerht=layer_min
             
-        edgealt=z[layerwidth]
+        edgealt=z[layerwidth-1]
         
-        if np.isnan(templayerht) or tempmolht<=templayerht:
-            maxalt=tempmolht
+        if np.isnan(templayerht) or templayerht<edgealt:
+            maxalt=z[-1]
         else:
             maxalt=templayerht
-            
+        
+        
         try:
             PBLval=min([v[0] for v in zip(CWTminvals,CWTminalts) if edgealt<=v[1]<=maxalt])                
         except ValueError:
@@ -822,16 +823,7 @@ def scenemaker(layerdict,**kwargs):
     for t in times:
         tempmol=molecular.ix[:,t].dropna(axis=1,how='all')
         templayers=layers.ix[:,t].dropna(axis=1,how='all')
-        tempPBL=PBL.ix[t]
-        #first assign PBL props to altitudes below PBL height
-        typemask.loc[t,typemask.columns<=tempPBL]='PBL'
-        subtypemask.loc[t,subtypemask.columns<=tempPBL]='PBL'
-        lrat.loc[t,lrat.columns<=tempPBL]=PBLrat
-        depoltemp=mpl.depolrat[0].ix[t]
-        depolrat.loc[t,depolrat.columns<=tempPBL]=np.mean(depoltemp[depoltemp.index<tempPBL])
-        layerbase.loc[t,layerbase.columns<=tempPBL]=alts[0]
-        layertop.loc[t,layertop.columns<=tempPBL]=tempPBL
-        colormask.loc[t,colormask.columns<=tempPBL]=colordict['PBL']
+
         #then assign molecular props to altitudes identified as such
         for m in tempmol.iteritems():
             base=m[1]['Base']
@@ -861,7 +853,18 @@ def scenemaker(layerdict,**kwargs):
             layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
             layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
             colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict[tempsubtype]
-    
+        
+        tempPBL=PBL.ix[t]
+        #finally assign PBL props to altitudes below PBL height
+        typemask.loc[t,typemask.columns<=tempPBL]='PBL'
+        subtypemask.loc[t,subtypemask.columns<=tempPBL]='PBL'
+        lrat.loc[t,lrat.columns<=tempPBL]=PBLrat
+        depoltemp=mpl.depolrat[0].ix[t]
+        depolrat.loc[t,depolrat.columns<=tempPBL]=np.mean(depoltemp[depoltemp.index<tempPBL])
+        layerbase.loc[t,layerbase.columns<=tempPBL]=alts[0]
+        layertop.loc[t,layertop.columns<=tempPBL]=tempPBL
+        colormask.loc[t,colormask.columns<=tempPBL]=colordict['PBL']
+        
         #find and classify unidentified areas
         tempprof=typemask.loc[t]
         tempprof.fillna('Insufficient Signal',inplace=True)
@@ -1340,13 +1343,16 @@ if __name__=='__main__':
     timestep='240S'
     altrange = np.arange(150,15030,30)
     SNRthreshold=1.0
-    molthresh=1.0
+    molthresh=0.01
     layernoisethresh=1.0
+    sigma0=0.4
     mpltest=mtools.MPL()
     mpltest.fromMPL(filepath)
     mpltest.alt_resample(altrange)
+    mpltest.calc_all()
+    
     layerdict=findalllayers(mplin=mpltest,timestep=timestep,molthresh=molthresh,
-                            layernoisethresh=layernoisethresh,datatype='NRB',sigma0=0.1)
+                            layernoisethresh=layernoisethresh,datatype='NRB',sigma0=sigma0)
     mpltest=scenemaker(layerdict)
     mpltest=basiccorrection(mpltest,inplace=True)
     #    mpltemp.save_to_HDF(savefilename)
@@ -1359,7 +1365,7 @@ if __name__=='__main__':
     topplot_limits=(0.0,2e-5,2e-6)
     bottomplot_limits=(0.0,2e-4,4e-5)
     
-    kwargs = {'saveplot':True,'showplot':True,'verbose':True,
+    kwargs = {'saveplot':False,'showplot':True,'verbose':True,
                 'savefilepath':plotfilepath,'savefilename':plotfilename,
                 'hours':hours,'bottomplot_limits':bottomplot_limits,'timestep':timestep,
                 'topplot_limits':topplot_limits,'SNRmask':False,'altrange':altrange,
@@ -1368,7 +1374,7 @@ if __name__=='__main__':
     
 #    mplot.doubleplot(mpltest,**kwargs)    
 #    
-#    mplot.colormask_plot(mpltest,saveplot=True,plotfilepath=plotfilepath,plotfilename=plotfilename)
+    mplot.colormask_plot(mpltest,saveplot=False,plotfilepath=plotfilepath,plotfilename=plotfilename)
 #    mpl=mtools.MPL()
 #    mpl.fromHDF(filename)
 #    mpl.time_resample(timestep=timestep)

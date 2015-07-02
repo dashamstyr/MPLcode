@@ -150,7 +150,7 @@ def fileproc(**kwargs):
                      'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
                      'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'sigma0':sigma0,
                      'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-                     'dustthresh':dustthresh}
+                     'dustthresh':dustthresh,'sigma0':sigma0}
         layerdict=mproc.findalllayers(mplin=MPLdat_event,**layerkwargs)
         MPLdat_event=mproc.scenemaker(layerdict)
         
@@ -268,7 +268,7 @@ def proccessall(**kwargs):
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
-    sigma0=kwargs.get('sigma0',None)
+    sigma0=kwargs.get('sigma0',0.4)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
     smokethresh=kwargs.get('smokethresh',0.05)
@@ -505,7 +505,7 @@ if __name__ == '__main__':
     
     os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
     altrange=range(150,15030,30)
-    timestep='240S'
+    timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
     plotsavepath='.\Figures'
@@ -516,10 +516,11 @@ if __name__ == '__main__':
     NRBmin=0.5
     NRBminalt=150
     NRBnumprofs=1
-    SNRmask=True
+    SNRmask=False
     SNRthresh=3.0
     molthresh=1.0
     layernoisethresh=1.0
+    sigma0=0.4
     doplot=True
     saveplot=False,
     showplot=True
@@ -541,7 +542,7 @@ if __name__ == '__main__':
             'docorrection':docorrection,'dolayerplot':dolayerplot,'docorplot':docorplot,
             'verbose':verbose,'NRBmask':NRBmask,'SNRmask':SNRmask,'NRB_limits':NRB_limits,
             'depol_limits':depol_limits,'back_limits':back_limits,'ext_limits':ext_limits,
-            'interpolate':interpolate}
+            'interpolate':interpolate, 'sigma0':sigma0}
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import pandas as pan
 from MPLcode import MPLtools as mtools
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap,ListedColormap
 #from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
@@ -471,56 +471,56 @@ def colormask_plot(mplin,**kwargs):
                                        'Unidentified Aerosol':8,
                                        'Insufficient Signal':9})
     
-    Clear=(176.0,244.0,230.0)
-    PBL=(255.0,69.0,0.0)
-    Ice=(255.0,255.0,255.0)
-    Water=(0.0,0.0,205.0)
-    Mixed=(186.0,85.0,211.0)
-    Dust=(184.0,134.0,11.0)
-    Smoke=(75.0,75.0,100.0)
-    Urban=(220.0,20.0,60.0)
-    Unidentified=(192.0,192.0,192.0)
-    Insufficient=(0.0,0.0,0.0)
+    Clear=(176.0/255.0,244.0/255.0,230.0/255.0)
+    PBL=(255.0/255.0,69.0/255.0,0.0/255.0)
+    Ice=(255.0/255.0,255.0/255.0,255.0/255.0)
+    Water=(0.0/255.0,0.0/255.0,205.0/255.0)
+    Mixed=(186.0/255.0,85.0/255.0,211.0/255.0)
+    Dust=(184.0/255.0,134.0/255.0,11.0/255.0)
+    Smoke=(75.0/255.0,75.0/255.0,100.0/255.0)
+    Urban=(220.0/255.0,20.0/255.0,60.0/255.0)
+    Unidentified=(192.0/255.0,192.0/255.0,192.0/255.0)
+    Insufficient=(0.0/255.0,0.0/255.0,0.0/255.0)
                                        
-    cmapdict =  {'red':    ((0.0, Clear[0]/255.0, Clear[0]/255.0),
-                            (0.1, Clear[0]/255.0, PBL[0]/255.0),
-                            (0.2, PBL[0]/255.0, Ice[0]/255.0),
-                            (0.3, Ice[0]/255.0, Water[0]/255.0),
-                            (0.4, Water[0]/255.0, Mixed[0]/255.0),
-                            (0.5, Mixed[0]/255.0, Dust[0]/255.0),
-                            (0.6, Dust[0]/255.0, Smoke[0]/255.0),
-                            (0.7, Smoke[0]/255.0, Urban[0]/255.0),
-                            (0.8, Urban[0]/255.0, Unidentified[0]/255.0),
-                            (0.9, Unidentified[0]/255.0, Insufficient[0]/255.0),
-                            (1.0, Insufficient[0]/255.0, Insufficient[0]/255.0)),
-        
-                 'green':  ((0.0, Clear[1]/255.0, Clear[1]/255.0),
-                            (0.1, Clear[1]/255.0, PBL[1]/255.0),
-                            (0.2, PBL[1]/255.0, Ice[1]/255.0),
-                            (0.3, Ice[1]/255.0, Water[1]/255.0),
-                            (0.4, Water[1]/255.0, Mixed[1]/255.0),
-                            (0.5, Mixed[1]/255.0, Dust[1]/255.0),
-                            (0.6, Dust[1]/255.0, Smoke[1]/255.0),
-                            (0.7, Smoke[1]/255.0, Urban[1]/255.0),
-                            (0.8, Urban[1]/255.0, Unidentified[1]/255.0),
-                            (0.9, Unidentified[1]/255.0, Insufficient[1]/255.0),
-                            (1.0, Insufficient[1]/255.0, Insufficient[1]/255.0)),
-        
-                 'blue':   ((0.0, Clear[2]/255.0, Clear[2]/255.0),
-                            (0.1, Clear[2]/255.0, PBL[2]/255.0),
-                            (0.2, PBL[2]/255.0, Ice[2]/255.0),
-                            (0.3, Ice[2]/255.0, Water[2]/255.0),
-                            (0.4, Water[2]/255.0, Mixed[2]/255.0),
-                            (0.5, Mixed[2]/255.0, Dust[2]/255.0),
-                            (0.6, Dust[2]/255.0, Smoke[2]/255.0),
-                            (0.7, Smoke[2]/255.0, Urban[2]/255.0),
-                            (0.8, Urban[2]/255.0, Unidentified[2]/255.0),
-                            (0.9, Unidentified[2]/255.0, Insufficient[2]/255.0),
-                            (1.0, Insufficient[2]/255.0, Insufficient[2]/255.0))}    
+#    cmapdict =  {'red':    ((0.0, Clear[0], Clear[0]),
+#                            (0.1, Clear[0], PBL[0]),
+#                            (0.2, PBL[0], Ice[0]),
+#                            (0.3, Ice[0], Water[0]),
+#                            (0.4, Water[0], Mixed[0]),
+#                            (0.5, Mixed[0], Dust[0]),
+#                            (0.6, Dust[0], Smoke[0]),
+#                            (0.7, Smoke[0], Urban[0]),
+#                            (0.8, Urban[0], Unidentified[0]),
+#                            (0.9, Unidentified[0], Insufficient[0]),
+#                            (1.0, Insufficient[0], Insufficient[0])),
+#        
+#                 'green':  ((0.0, Clear[1], Clear[1]),
+#                            (0.1, Clear[1], PBL[1]),
+#                            (0.2, PBL[1], Ice[1]),
+#                            (0.3, Ice[1], Water[1]),
+#                            (0.4, Water[1], Mixed[1]),
+#                            (0.5, Mixed[1], Dust[1]),
+#                            (0.6, Dust[1], Smoke[1]),
+#                            (0.7, Smoke[1], Urban[1]),
+#                            (0.8, Urban[1], Unidentified[1]),
+#                            (0.9, Unidentified[1], Insufficient[1]),
+#                            (1.0, Insufficient[1], Insufficient[1])),
+#        
+#                 'blue':   ((0.0, Clear[2], Clear[2]),
+#                            (0.1, Clear[2], PBL[2]),
+#                            (0.2, PBL[2], Ice[2]),
+#                            (0.3, Ice[2], Water[2]),
+#                            (0.4, Water[2], Mixed[2]),
+#                            (0.5, Mixed[2], Dust[2]),
+#                            (0.6, Dust[2], Smoke[2]),
+#                            (0.7, Smoke[2], Urban[2]),
+#                            (0.8, Urban[2], Unidentified[2]),
+#                            (0.9, Unidentified[2], Insufficient[2]),
+#                            (1.0, Insufficient[2], Insufficient[2]))}    
                    
-    maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
+   # maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
     
-    
+    maskmap=ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Smoke,Urban,Unidentified,Insufficient])
     if SNRmask:
         mplmasked=mtools.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
         maskin=mplmasked.scenepanel[0]['colormask']
@@ -533,15 +533,16 @@ def colormask_plot(mplin,**kwargs):
     if datetimerange:
         maskin=maskin[(maskin.index>datetimerange[0]) & (maskin.index<datetimerange[-1])]
     
+    plotmask=maskin.T[::-1]+0.5
     times=maskin.index
     alts=maskin.columns
     
     numfigs=len(plt.get_fignums())
     fig=plt.figure(numfigs+1)
     
-    ax1=plt.subplot2grid((37,60),(0,0),rowspan=30,colspan=60)
-    cax=plt.subplot2grid((37,60),(30,0),rowspan=7,colspan=60)    
-    image=ax1.imshow(maskin.T[::-1],cmap=maskmap,interpolation='none',vmin=0,vmax=9,aspect='auto')
+    ax1=plt.subplot2grid((30,80),(0,0),rowspan=30,colspan=60)
+    cax=plt.subplot2grid((30,80),(0,60),rowspan=30,colspan=7) 
+    image=ax1.imshow(plotmask,cmap=maskmap,interpolation='none',vmin=0,vmax=10,aspect='auto')
     plt.tight_layout()
 #    mplot.forceAspect(ax1,aspect=ar)
     dateticks(ax1, times, hours = hours,fsize=fontsize)
@@ -550,9 +551,9 @@ def colormask_plot(mplin,**kwargs):
     altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
 #    divider = make_axes_locatable(ax)
 #    cax = divider.append_axes("bottom", size="10%", pad=0.15)
-    cbar1=fig.colorbar(image,cax=cax,orientation='horizontal')
+    cbar1=fig.colorbar(image,cax=cax,orientation='vertical')
 #    cbar1.ax.set_autoscalex_on(False)
-    cbar_ticklocs=np.arange(len(colordict)+0.5)
+    cbar_ticklocs=np.arange(len(colordict))+0.5
     cbar1.set_ticks(cbar_ticklocs)
     cbar1.ax.tick_params(bottom='off',top='off',labelsize=fontsize-4)
     
