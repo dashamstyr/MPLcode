@@ -500,6 +500,8 @@ def clearall():
     """clear all globals"""
     for uniquevar in [var for var in globals().copy() if var[0] != "_" and var != 'clearall']:
         del globals()[uniquevar]
+
+
         
 if __name__ == '__main__':
     
@@ -521,18 +523,24 @@ if __name__ == '__main__':
     molthresh=1.0
     layernoisethresh=1.0
     sigma0=0.4
-    doplot=True
+    cloudthresh=(1.0,0.20)
+    waterthresh=0.10
+    icethresh=0.25
+    smokethresh=0.05
+    dustthresh=0.15
+ 
+    doplot=False
     saveplot=False,
     showplot=True
     dolayers=True
-    docorrection=True
+    docorrection=False
     dolayerplot=True
-    docorplot=True
+    docorplot=False
     verbose=False
     NRB_limits=(0.0,1.0,0.2) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,2e-6,4e-7)
-    ext_limits=(0.0,2e-5,4e-6)
+    back_limits=(0.0,2e-3,4e-4)
+    ext_limits=(0.0,2e-2,4e-3)
     interpolate='none'
     
     kwargs={'altrange':altrange,'timestep':timestep,'savetype':savetype,'procsavepath':procsavepath,
@@ -542,7 +550,9 @@ if __name__ == '__main__':
             'docorrection':docorrection,'dolayerplot':dolayerplot,'docorplot':docorplot,
             'verbose':verbose,'NRBmask':NRBmask,'SNRmask':SNRmask,'NRB_limits':NRB_limits,
             'depol_limits':depol_limits,'back_limits':back_limits,'ext_limits':ext_limits,
-            'interpolate':interpolate, 'sigma0':sigma0}
+            'interpolate':interpolate, 'sigma0':sigma0, 'cloudthresh':cloudthresh,
+            'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
+            'dustthresh':dustthresh}
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)

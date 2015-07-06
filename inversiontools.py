@@ -750,6 +750,7 @@ def invert_profile(profin,lratin,**kwargs):
         moledges.append((temprange[0],temprange[-1]))
     
     alt=profin.index[-1]
+    
     tempedges=moledges.pop()
     while True:        
         if tempedges[0]<alt<=tempedges[1]: 

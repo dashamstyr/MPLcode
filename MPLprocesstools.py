@@ -290,7 +290,7 @@ def find_layers(MPLin,**kwargs):
     minwidth=kwargs.get('minwidth',4)
     minsep=kwargs.get('minsep',2)
     sigma0=kwargs.get('sigma0',None)
-    depolsigma0=kwargs.get('depolsigma0',0.05)
+    depolsigma0=kwargs.get('depolsigma0',None)
     cloudthresh=kwargs.get('cloudthresh',(1,0.4))
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
@@ -339,7 +339,7 @@ def find_layers(MPLin,**kwargs):
         if depolsigma0:
             tempdepolsigma0=depolsigma0
         else:
-            tempdepolsigma0=np.mean(tempdepolsigma[bg_alt:])
+            tempdepolsigma0=np.mean(tempdepolsigma.ix[bg_alt:])
         
         temp_cwt=signal.cwt(tempprof,wavelet,widths)
         tempmax=maxmin(temp_cwt,widths,np.greater)
@@ -433,16 +433,15 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
     layers=[]
     n=0
     nextminloc=0
-        
+    
+    altstep=prof.index[1]-prof.index[0]
+    
     while n < len(maxiloc)-1:
         n+=1
         #note: due to buffering to obtain averages, first and last peaks are discarded
         peakloc=maxiloc[n]
         peakval=prof.iloc[peakloc]
-        if datatype=='data':
-            threshval=thresh*sigma0
-        else:
-            threshval=thresh*sigma0*(peakloc/1000.0)**2
+        threshval=thresh*sigma0
         
         if peakval >= threshval:
             edge_below_list=[v for v in miniloc[nextminloc:] if v<peakloc]
@@ -458,9 +457,9 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
                     templowedge=edge_below
                     break
                 else:
-                    templowedge=[]
+                    templowedge=None
                     #try to find upper edge where delta_upper exceeds threshold
-            if templowedge:
+            if templowedge is not None:
                 for edge_above in edge_above_list:
                     delta_upper=prof.iloc[peakloc]-prof.iloc[edge_above]
                     if delta_upper>threshval and edge_above>=0.0:
@@ -468,13 +467,12 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
     #                    temppeakval=np.max(prof.iloc[templowedge:edge_above])
     #                    temppeakloc=np.where(prof.values==temppeakval)
                         tempprof=prof.iloc[templowedge:edge_above]
-                        if len(tempprof>=minwidth):
-                            tempcopolprof=prof.iloc[templowedge:edge_above]
+                        if len(tempprof)>=minwidth:
                             tempdepolratprof=depolratprof.iloc[templowedge:edge_above]
         #                    delta=max(delta_lower,delta_upper)
                             depolkwargs={'widths':depolwidths,'layerwidth':depollayerwidth,
                                          'wavelet':depolwavelet}
-                            depol_layers=find_depollayers(tempcopolprof,tempdepolratprof,
+                            depol_layers=find_depollayers(tempprof,tempdepolratprof,
                                                           depolratsigma0,**depolkwargs)
                             
                             layers+=depol_layers
@@ -506,8 +504,8 @@ def find_depollayers(copolprof,depolratprof,depolratsigma0,**kwargs):
     maxloc=[maxval[1] for maxval in tempmax if maxval[0]==layerwidth]
     
     edgeloc=np.sort(minloc+maxloc)
-    edgealt=[z[v] for v in edgeloc]
-    templayers=depol_filter(depolratprof,copolprof,edgealt,depolratsigma0,noisethresh)
+    edgealts=[z[v] for v in edgeloc]
+    templayers=depol_filter(depolratprof,copolprof,edgealts,depolratsigma0,noisethresh)
     
     return templayers
     
@@ -530,7 +528,7 @@ def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
         meanbelow=np.mean(depolprof.ix[base:edge])
         meanabove=np.mean(depolprof.ix[edge:nextedge])
         depoldelta=abs(meanabove-meanbelow)
-        if depoldelta>=thresh*sigma0*(edge/1000.0)**2:
+        if depoldelta>=thresh*sigma0:
             if n==len(edgealts):
                 bottom=edge
                 top=nextedge
@@ -1345,7 +1343,7 @@ if __name__=='__main__':
     SNRthreshold=1.0
     molthresh=0.01
     layernoisethresh=1.0
-    sigma0=0.4
+    sigma0=None
     mpltest=mtools.MPL()
     mpltest.fromMPL(filepath)
     mpltest.alt_resample(altrange)

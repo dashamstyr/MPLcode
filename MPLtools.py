@@ -1160,10 +1160,7 @@ class MPL:
             if verbose:
                 print "Calculating sigma values for {0}".format(dset_name)
             for n in range(len(dset)): 
-                if dset_name=='data':                    
-                    tempdat=dset[n]
-                else:
-                    tempdat=dset[n].div((dset[n].columns.values/1000.0)**2,axis=1)  #other datasets have been r-squared corrected, and this effect must be cancelled out
+                tempdat=dset[n]
                 stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,
                                        columns=tempdat.columns)
                 sigmadict[dset_name].append(stdarray)
@@ -1543,8 +1540,10 @@ def MPLtoHDF(filename, appendflag = 'False'):
 def partdepolratcalc(depolin,beta_parallel,beta_mol,moldepolrat=0.0035):
     
     #default moldepolrat: narrow double filter allows only Cabannes line (see SPIE proc reference)
-    A = moldepolrat/(1+moldepolrat)
-    partdepolrat=(depolin*beta_parallel-A*beta_mol)/(beta_parallel-A*beta_mol)
+#    A = moldepolrat/(1+moldepolrat)
+#    partdepolrat=(depolin*beta_parallel-A*beta_mol)/(beta_parallel-A*beta_mol)
+    beta_p=beta_parallel-beta_mol    
+    partdepolrat=(beta_parallel*depolin - beta_mol*moldepolrat)/beta_p
     
     return partdepolrat
 

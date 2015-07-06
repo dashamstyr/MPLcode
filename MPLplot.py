@@ -540,8 +540,8 @@ def colormask_plot(mplin,**kwargs):
     numfigs=len(plt.get_fignums())
     fig=plt.figure(numfigs+1)
     
-    ax1=plt.subplot2grid((30,80),(0,0),rowspan=30,colspan=60)
-    cax=plt.subplot2grid((30,80),(0,60),rowspan=30,colspan=7) 
+    ax1=plt.subplot2grid((1,35),(0,0),rowspan=1,colspan=30)
+    cax1=plt.subplot2grid((1,35),(0,30),rowspan=1,colspan=3) 
     image=ax1.imshow(plotmask,cmap=maskmap,interpolation='none',vmin=0,vmax=10,aspect='auto')
     plt.tight_layout()
 #    mplot.forceAspect(ax1,aspect=ar)
@@ -551,7 +551,7 @@ def colormask_plot(mplin,**kwargs):
     altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
 #    divider = make_axes_locatable(ax)
 #    cax = divider.append_axes("bottom", size="10%", pad=0.15)
-    cbar1=fig.colorbar(image,cax=cax,orientation='vertical')
+    cbar1=fig.colorbar(image,cax=cax1,orientation='vertical')
 #    cbar1.ax.set_autoscalex_on(False)
     cbar_ticklocs=np.arange(len(colordict))+0.5
     cbar1.set_ticks(cbar_ticklocs)
