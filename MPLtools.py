@@ -201,7 +201,7 @@ class MPL:
             
                     headerdat['bintime'] = floatarray[2]  #bin width in seconds
                     
-                    headerdat['rangecal'] = floatarray[3] #range offset in meters, default is 0
+                    headerdat['rangecal'] = floatarray[3]/1000.0 #range offset in km, default is 0
             
                     headerdat['databins'] = intarray16[9]  #number of bins not including those used for background
                     headerdat['scanflag'] = intarray16[10]  #0: no scanner, 1: scanner
@@ -253,7 +253,7 @@ class MPL:
 
                     numbins = headerdat['numbins']
                     numchans = headerdat['numchans'] 
-                    altstep = headerdat['bintime']*const.c/2 #altitude step in meters
+                    altstep = headerdat['bintime']*const.c/2000.0 #altitude step in km
                     maxalt = numbins*altstep
                     firstbin=headerdat['firstbin']
                     minalt = headerdat['rangecal']+firstbin*altstep
@@ -277,12 +277,12 @@ class MPL:
         df_copol = pan.DataFrame.from_dict(profdat_copol,orient = 'index')
         df_copol.columns = altrange
         #minimum usable altitude is 150m for overlap reasons
-        if altrange[0]<=150.0:
-            df_copol=df_copol.loc[:,150.0:]
+        if altrange[0]<=0.150:
+            df_copol=df_copol.loc[:,0.150:]
         df_crosspol = pan.DataFrame.from_dict(profdat_crosspol,orient = 'index')
         df_crosspol.columns = altrange
-        if altrange[0]<=150.0:
-            df_crosspol=df_crosspol.loc[:,150.0:]
+        if altrange[0]<=0.150:
+            df_crosspol=df_crosspol.loc[:,0.150:]
         df_header = pan.DataFrame.from_dict(header, orient = 'index')
                 
         self.data = [df_copol, df_crosspol]
@@ -850,7 +850,7 @@ class MPL:
         bg = [self.header['bg_avg2'],self.header['bg_avg1']]
       
         for n in range(self.header['numchans'][0]): 
-            rsq = (np.array(dataout[n].columns, dtype=float)/1000.0)**2
+            rsq = (np.array(dataout[n].columns, dtype=float))**2
             for i in self.data[n].index:
                 dataout[n].ix[i] = (self.data[n].ix[i] - bg[n].ix[i])*rsq
         
@@ -924,7 +924,7 @@ class MPL:
                 
             numpairs = (numvals-1)/2
             mean_energy = np.array(afterpulsedat[0])
-            aprange = np.array(afterpulsedat[1:numpairs+1])*1000.0
+            aprange = np.array(afterpulsedat[1:numpairs+1])
             apvals_copol = np.array(afterpulsedat[numpairs+1:])/mean_energy
             apvals_crosspol=apvals_copol
             apvals=[apvals_copol,apvals_crosspol]
@@ -938,7 +938,7 @@ class MPL:
                 overlapdat.fromfile(binfile,numvals)
             
             numpairs = numvals/2
-            overrange = np.array(overlapdat[:numpairs])*1000.0
+            overrange = np.array(overlapdat[:numpairs])
             overvals = np.array(overlapdat[numpairs:])    
             
             altvals = np.array(tempdat[0].columns, dtype='float')
@@ -995,7 +995,6 @@ class MPL:
                     apbg_crosspol = struct.unpack('d',temp)[0]
                     
                     aprange.fromfile(binfile,apnumbins)
-                    aprange = [n*1000.0 for n in aprange] # convert range values to meters
                     apvals_copol.fromfile(binfile,apnumbins)
                     copol_norm = [n/apenergy for n in apvals_copol] #convert to counts/us
                     apvals_crosspol.fromfile(binfile,apnumbins)
@@ -1015,7 +1014,7 @@ class MPL:
                 overlapdat.fromfile(binfile,numvals)
                 
             numpairs = numvals/2
-            overrange = np.array(overlapdat[:numpairs])*1000.0
+            overrange = np.array(overlapdat[:numpairs])
             overvals = np.array(overlapdat[numpairs:])    
         
             interp_overlap = np.interp(altvals,overrange,overvals)
@@ -1033,7 +1032,7 @@ class MPL:
         for n in range(numchans):
             interp_afterpulse = np.interp(altvals,aprange,apvals[n])
             NRBtemp=pan.DataFrame(index=tempdat[n].index,columns=tempdat[n].columns)
-            rsq = (np.array(tempdat[n].columns, dtype=float)/1000.0)**2
+            rsq = (np.array(tempdat[n].columns, dtype=float))**2
             for i in range(len(tempdat[n].index)):
                 tempval = ((tempdat[n].iloc[i] - bg[n][i])*deadtimecor[n,i] - interp_afterpulse)/energy[i]                
                 NRBtemp.iloc[i] = tempval*rsq/interp_overlap
@@ -1244,7 +1243,7 @@ class MPL:
                         SNRprof=np.array([SNR(v) for v in tempprof.values]).clip(0)
                         SNRtemp.ix[i]=SNRprof
                 else:   
-                    tempdat=dset[n].div((dset[n].columns.values/1000.0)**2,axis=1)  #other datasets have been r-squared corrected, and this effect must be cancelled out
+                    tempdat=dset[n].div((dset[n].columns.values)**2,axis=1)  #other datasets have been r-squared corrected, and this effect must be cancelled out
                     stdarray=pan.DataFrame(genfilt(tempdat,np.std,winsize),index=tempdat.index,
                                            columns=tempdat.columns)
                     meanarray=pan.DataFrame(genfilt(tempdat,np.mean,winsize),index=tempdat.index,
@@ -1332,21 +1331,25 @@ def get_files(titlestring,filetype = ('.txt','*.txt')):
     if filenames == "": 
         print "You didn't open anything!"  
         return
-        
-    if isinstance(filenames,list) or isinstance(filenames,tuple): return filenames
-
-    #http://docs.python.org/library/re.html
-    #the re should match: {text and white space in brackets} AND anynonwhitespacetokens
-    #*? is a non-greedy match for any character sequence
-    #\S is non white space
-
-    #split filenames string up into a proper python list
-    result = re.findall("{.*?}|\S+",filenames)
-
-    #remove any {} characters from the start and end of the file names
-    result = [ re.sub("^{|}$","",i) for i in result ]     
     
     root.destroy()
+    
+    if isinstance(filenames,list):
+        result = filenames   
+    elif isinstance(filenames,tuple): 
+        result = list(filenames)
+    else:
+        #http://docs.python.org/library/re.html
+        #the re should match: {text and white space in brackets} AND anynonwhitespacetokens
+        #*? is a non-greedy match for any character sequence
+        #\S is non white space
+    
+        #split filenames string up into a proper python list
+        result = re.findall("{.*?}|\S+",filenames)
+    
+        #remove any {} characters from the start and end of the file names
+        result = [ re.sub("^{|}$","",i) for i in result ] 
+    result.sort()
     return result
 
 def resample_cols(dfin,newcols,verbose=False,method='interp'):
@@ -1390,7 +1393,8 @@ def resample_cols(dfin,newcols,verbose=False,method='interp'):
         
     
 def MPLtoHDF(filename, appendflag = 'False'):
-    
+    #not updated recently - do not use as is!
+    #07/07/2015
     h5filename = filename.split('.')[0]+'_proc.h5'
 
     with open(filename,'rb') as binfile:
@@ -1676,7 +1680,7 @@ def SNR_mask_depol(mplin,**kwargs):
     datatype=kwargs.get('datatype','NRB')
     
     if recalc or not mplin.SNR:
-        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatypes=[datatype])
   
     #start by creating mask where areas that fall below SNRthreshold are zeroed out
     SNRmask = mplin.SNR[datatype][0]>=SNRthreshold
@@ -1691,30 +1695,42 @@ def SNR_mask_depol(mplin,**kwargs):
         mplout.depolrat[0].replace(0,nopassval,inplace=True)
     return mplout 
 
-def SNR_mask_colors(mplin,**kwargs):
+def SNR_mask_scene(mplin,**kwargs):
     
     SNRthreshold=kwargs.get('SNRthreshold',3)
     numprofs=kwargs.get('numprofs',1)
     bg_alt=kwargs.get('bg_alt',None)
-    nopassval=kwargs.get('nopassval',-9999)
     inplace=kwargs.get('inplace',False)
     recalc=kwargs.get('recalc',False)
     datatype=kwargs.get('datatype','NRB')
+    nopassval=kwargs.get('nopassval',None)
     
-    if recalc or not mplin.SNR:
-        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatype=[datatype])
+    if nopassval is None:
+        nopassval={'Base':np.nan,
+                   'Top':np.nan,
+                   'Lidar_Ratio':0.0,
+                   'Delta':0.0,
+                   'Type':'Insufficient Signal',
+                   'Sub-Type':'Insufficient Signal',
+                   'Depol':0.0,
+                   'colormask':9}
+    
+    if recalc or mplin.SNR is None:
+        mplin = mplin.calculate_SNR(bg_alt,numprofs,datatypes=[datatype])
   
     #start by creating mask where areas that fall below SNRthreshold are zeroed out
-    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)|(mplin.scenepanel[0]['Type']=='Clear Air')
-    SNRmask.replace(False,np.nan,inplace=True)
+    SNRmask = (mplin.SNR[datatype][0]>=SNRthreshold)#|(mplin.scenepanel[0]['Type']=='Clear Air')
+#    SNRmask.replace(False,np.nan,inplace=True)
+    
     if inplace:
         mplout=mplin
     else:
         mplout=deepcopy(mplin)
            
-    if mplout.scenepanel:        
-        mplout.scenepanel[0]['colormask']=mplin.scenepanel[0]['colormask']*SNRmask
-        mplout.scenepanel[0]['colormask'].replace(np.nan,nopassval,inplace=True)
+    if mplout.scenepanel:
+        for sceneitem,maskval in nopassval.iteritems():
+            mplout.scenepanel[0][sceneitem]=mplin.scenepanel[0][sceneitem]*SNRmask
+            mplout.scenepanel[0][sceneitem].fillna(nopassval,inplace=True)
     return mplout 
     
 def SNR_mask_all(mplin,**kwargs):
@@ -1849,7 +1865,7 @@ def NRB_mask_all(MPLin,**kwargs):
     
     if MPLout.scenepanel:
         for i in MPLout.scenepanel[0].items:
-            MPLout.scenepanel[0][i]=NRB_mask_apply(MPLout.scenepanel[0][i],threshseries)
+            MPLout.scenepanel[0][i]=NRB_mask_apply(MPLout.scenepanel[0][i],threshseries,nopassval='Insufficient Signal')
      
     return MPLout
     

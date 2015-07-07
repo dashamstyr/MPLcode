@@ -27,7 +27,7 @@ def std_atm(z):
     #Define breakpoints for US Standard atmosphere, with associated altitude,
     #pressure, density, temperature, and dry adiabatic lapse rates
 
-    alt = [0, 11000, 20000, 32000, 47000]
+    alt = [0, 11.000, 20.000, 32.000, 47.000]
     press = [101325,22632.1, 5474.89,868.019,110.906]
     dense = [1.225, 0.36391, 0.08803, 0.01322, 0.00143]
     temp = [288.15, 216.65, 216.65, 228.65, 270.65]
@@ -73,8 +73,8 @@ def molecular(z,wave=532.0):
 
     Outputs:
 
-    beta = backscatter coefficients [1/m*sr]
-    sigma = extinction coefficients [1/m]
+    beta = backscatter coefficients [1/km*sr]
+    sigma = extinction coefficients [1/km]
     """
 
     #calculate temperature and pressure profiles using US Standard atmosphere
@@ -86,7 +86,7 @@ def molecular(z,wave=532.0):
 
     T_s = 288.15  #[K] reference temperature
     P_s = 101325.0  #[Pa] reference pressure
-    N_s = 2.547e25  #[1/m^3]  reference number concentration
+    N_s = 2.547e25  #[1/km^3]  reference number concentration
     gamma = 0.0279 #[unitless] depolarization factor (from Kovalev pg.35)
 
     #calculate reference index of refraction using a polynomial approximation
@@ -111,7 +111,7 @@ def molecular(z,wave=532.0):
     sigma = (8*np.pi**3*(m**2-1)**2*N/(3*N_s**2*(wave*1e-9)**4))*((6+3*gamma)/(6-7*gamma))* \
             (P/P_s)*(T_s/T)
 
-
+    sigma=sigma*1000.0 #convert to 1/km
     #For Rayleigh scattering the extinction to backscatter ratio is 8*pi/3
 
     beta = 3*sigma/(8*np.pi)
@@ -164,15 +164,15 @@ def molprof(z,wave=532.0,T0=1.0,E0=1.0,C=1.0):
     if oldalt==0.0:
         P_z.loc[oldalt] = E0*C*beta_R.iloc[0]*T_total
     else:
-       P_z.loc[oldalt] = E0*C*(oldalt/1000.0)**-2*beta_R.iloc[0]*T_total
+       P_z.loc[oldalt] = E0*C*oldalt**-2*beta_R.iloc[0]*T_total
     
     for alt in z[1:]:
         T_step = np.exp(-2*sigma_R.loc[alt]*(alt-oldalt))
         T_total = T_total*T_step
-        P_z.loc[alt] = (E0*C*beta_R.loc[alt]*T_total)*(alt/1000.0)**-2.0
+        P_z.loc[alt] = (E0*C*beta_R.loc[alt]*T_total)*alt**-2.0
         oldalt=alt
         
-    rsq = [val*(alt/1000.0)**2.0 for val,alt in zip(P_z,z)]
+    rsq = [val*alt**2.0 for val,alt in zip(P_z,z)]
     NRB = [val/E0 for val in rsq]
         
     
@@ -343,7 +343,7 @@ def background_subtract(P_in,back_avg=None,z_min=None,inplace=True):
 
 def calcNRB(P_in,E0=1.0,background=None,inplace=True):
     P_out=background_subtract(P_in,back_avg=background,inplace=inplace)
-    P_out['rsq'] = P_out['vals']*(P_in.index.values/1000.0)**2.0
+    P_out['rsq'] = P_out['vals']*(P_in.index.values)**2.0
     P_out['NRB'] = P_out['rsq']/E0
     
     return P_out
@@ -658,7 +658,7 @@ def klett2(P_in,lrat_in,**kwargs):
     Inputs:
     P_in = a pandas series with values proportional to range squared corrected signal strength and altitude index
     r_m = the reference altitude - maximum altitude for which calculations are done
-            and the point at which the extinction coefficeint is assumed ot be known
+            and the point at which the backscatter coefficeint is assumed ot be known
     lrat_in = a Pandas series with values of particulate only lidar ratio and altitude index
     beta_m = the backscatter coefficient at altitude r_m
         
@@ -670,7 +670,17 @@ def klett2(P_in,lrat_in,**kwargs):
     r_m=kwargs.get('r_m',None)
     wave=kwargs.get('wave',532.0)
     
-    lrat = (1.0/lrat_in).replace(np.inf,0.0) #Klett definition of lidar ratio is backscatter/extintion not the other way round
+    lrat=pan.Series(data=0.0,index=lrat_in.index)
+    
+    grouped=lrat_in.groupby(lrat_in)
+    
+    for name,group in grouped:
+        if name==0.0:
+            continue
+        else:
+            lrat.ix[group.index]=1.0/group
+            
+#    lrat = (1.0/lrat_in).replace(np.inf,0.0) #Klett definition of lidar ratio is backscatter/extintion not the other way round
     lrat_R=3.0/(8.0*np.pi)
     altitudes = P_in.index.values
     
@@ -750,40 +760,40 @@ def invert_profile(profin,lratin,**kwargs):
         moledges.append((temprange[0],temprange[-1]))
     
     alt=profin.index[-1]
-    
-    tempedges=moledges.pop()
-    while True:        
-        if tempedges[0]<alt<=tempedges[1]: 
-            layeralts=profin.ix[tempedges[0]:tempedges[1]].index.values
-            tempmol=molprof(z=layeralts)
-            backscatter.ix[layeralts]=tempmol['beta_R'].values
-            extinction.ix[layeralts]=tempmol['sigma_R'].values
-            alt=layeralts[0]
-        else:
-            try:
-                tempedges=moledges.pop()
-                layeralts=profin.ix[tempedges[1]:alt].index[1:]
-                alt=tempedges[1]
-            except IndexError:
-                layeralts=profin.ix[:alt].index
+    if len(moledges)==0:
+        return backscatter,extinction
+    else:
+        tempedges=moledges.pop()        
+        while True:        
+            if tempedges[0]<alt<=tempedges[1]: 
+                layeralts=profin.ix[tempedges[0]:tempedges[1]].index.values
+                tempmol=molprof(z=layeralts)
+                backscatter.ix[layeralts]=tempmol['beta_R'].values
+                extinction.ix[layeralts]=tempmol['sigma_R'].values
                 alt=layeralts[0]
-                
-            layerprof=profin.ix[layeralts]
-            layerlrat=lratin.ix[layeralts]
-
-            if method=='klett2':
-                tempback,tempext=klett2(layerprof,layerlrat,r_m=layeralts[-1])
+            else:
+                try:
+                    tempedges=moledges.pop()
+                    layeralts=profin.ix[tempedges[1]:alt].index[1:]
+                    alt=tempedges[1]
+                except IndexError:
+                    layeralts=profin.ix[:alt].index
+                    alt=layeralts[0]
+                    
+                layerprof=profin.ix[layeralts]
+                layerlrat=lratin.ix[layeralts]
     
-            backscatter.ix[layeralts]=tempback.values
-            extinction.ix[layeralts]=tempext.values
-            
-        if alt==profin.index[0]:
-            break
+                if method=='klett2':
+                    tempback,tempext=klett2(layerprof,layerlrat,r_m=layeralts[-1])
         
-    return backscatter,extinction
+                backscatter.ix[layeralts]=tempback.values
+                extinction.ix[layeralts]=tempext.values
+                
+            if alt==profin.index[0]:
+                break
+        
+        return backscatter,extinction
             
-    #Step 2: Use Fernald algorithm for molecular sections    
-    #Step 3: Use klett2 for layers
 
 def lrat_tester_full(P_0,**kwargs):
     wave=kwargs.get('wave',532.0)

@@ -13,6 +13,7 @@ import matplotlib.colors as colors
 import pandas as pan
 from MPLcode import MPLtools as mtools
 from matplotlib.colors import LinearSegmentedColormap,ListedColormap
+import matplotlib.ticker as mtick
 #from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
@@ -67,9 +68,9 @@ def top_plot(ax, data, xdata, ydata, **kwargs):
     altticks(ax, ydata, fsize = fsize, tcolor = 'w')
     
     if orientation=='vertical':
-        ax.set_ylabel('Altitude [m]', fontsize = fsize+4, labelpad = 15)
+        ax.set_ylabel('Altitude [km]', fontsize = fsize+4, labelpad = 15)
     elif orientation=='vorizontal':
-        ax.set_ylabel('Horizontal Range [m]', fontsize = fsize+4, labelpad = 15)
+        ax.set_ylabel('Horizontal Range [km]', fontsize = fsize+4, labelpad = 15)
     for line in ax.yaxis.get_ticklines():
         line.set_markersize(10)
         line.set_markeredgewidth(1)        
@@ -93,9 +94,9 @@ def bottom_plot(fig,ax,data,xdata,ydata,**kwargs):
     forceAspect(ax,ar)        
     altticks(ax, ydata, fsize=fsize)  
     if orientation=='vertical':
-        ax.set_ylabel('Altitude [m]', fontsize = fsize+4, labelpad = 15)
+        ax.set_ylabel('Altitude [km]', fontsize = fsize+4, labelpad = 15)
     elif orientation=='horizontal':
-        ax.set_ylabel('Horizontal Range [m]', fontsize = fsize+4, labelpad = 15)
+        ax.set_ylabel('Horizontal Range [km]', fontsize = fsize+4, labelpad = 15)
     for line in ax.yaxis.get_ticklines():
         line.set_markersize(10)
         line.set_markeredgewidth(1)        
@@ -150,11 +151,11 @@ def altticks(ax, axisdat, numticks = 5, fsize = 21, tcolor = 'k'):
     numpoints = len(axisdat)
     step = numpoints//numticks
     tickmarks = range(0,numpoints,step)
-    ticklabels = [str(int(t)) for t in axisdat[::step]]
+    ticklabels = ["%.2F"%(t) for t in axisdat[::step]]
 
     ax.set_yticks(tickmarks)
     ax.set_yticklabels(ticklabels, fontsize = fsize)
-
+    
     for line in ax.yaxis.get_ticklines():
         line.set_color(tcolor)
         line.set_markersize(10)
@@ -217,7 +218,7 @@ def vertprof(df, altrange, exact_times, plot_type = 'line', zeromask = False,
             ax.plot(zeroline,alt,'r--', linewidth = 2)
             
         plt.yticks(fontsize = 21)
-        plt.ylabel('Altitude [m]', fontsize = 21)
+        plt.ylabel('Altitude [km]', fontsize = 21)
         
         for line in ax.yaxis.get_ticklines():
             line.set_color('k')
@@ -335,7 +336,7 @@ def doubleplot(datafile,**kwargs):
     elif toptype=='backscatter':
         topdat = MPLevent.backscatter[0]
         toptitle='Backscatter Coefficient'
-        topunits='$m^{-1}sr^{-1}$'
+        topunits='$km^{-1}sr^{-1}$'
     
     if bottomtype=='depol':
         if not MPLevent.depolrat:
@@ -352,7 +353,7 @@ def doubleplot(datafile,**kwargs):
     elif bottomtype=='extinction':
         bottomdat = MPLevent.extinction[0]
         bottomtitle='Extinction Coefficient'
-        bottomunits='$m^{-1}$'
+        bottomunits='$km^{-1}$'
         
     topdat.fillna(-99999,inplace=True)
     bottomdat.fillna(-99999,inplace=True)
@@ -435,14 +436,14 @@ def doubleprof(prof1,prof2,rangecor=True,deltaplot=True):
         for p in plotprofs:
             tempmean=p.mean()
             normprofs.append(p/tempmean())
-        deltaprof=(nromprofs[1]-normprofs[2])*100.0/normprofs[1] 
+        deltaprof=(normprofs[1]-normprofs[2])*100.0/normprofs[1] 
     
     numfigs=len(plt.get_fignums())
     fig=plt.figure(numfigs+1)
     ax1=fig.add_subplot(211)
     ax1a=plotprofs[0].plot()
     ax1b=plotprofs[1].plot(secondary_y=True)
-    mplot.align_yaxis(ax1a,0,ax1b,0)
+    align_yaxis(ax1a,0,ax1b,0)
     ax2=fig.add_subplot(212)
     deltaprof.plot()
 
@@ -455,7 +456,7 @@ def colormask_plot(mplin,**kwargs):
     SNRmask=kwargs.get('SNRmask',False)
     SNRthresh=kwargs.get('SNRthresh',3.0)
     SNRtype=kwargs.get('SNRtype','NRB')
-    saveplot=kwargs.get('saveplot',True)
+    saveplot=kwargs.get('saveplot',False)
     showplot=kwargs.get('showplot',True)
     plotfilepath=kwargs.get('plotfilepath',None)
     plotfilename=kwargs.get('plotfilename','testmaskfig.png')
@@ -482,43 +483,6 @@ def colormask_plot(mplin,**kwargs):
     Unidentified=(192.0/255.0,192.0/255.0,192.0/255.0)
     Insufficient=(0.0/255.0,0.0/255.0,0.0/255.0)
                                        
-#    cmapdict =  {'red':    ((0.0, Clear[0], Clear[0]),
-#                            (0.1, Clear[0], PBL[0]),
-#                            (0.2, PBL[0], Ice[0]),
-#                            (0.3, Ice[0], Water[0]),
-#                            (0.4, Water[0], Mixed[0]),
-#                            (0.5, Mixed[0], Dust[0]),
-#                            (0.6, Dust[0], Smoke[0]),
-#                            (0.7, Smoke[0], Urban[0]),
-#                            (0.8, Urban[0], Unidentified[0]),
-#                            (0.9, Unidentified[0], Insufficient[0]),
-#                            (1.0, Insufficient[0], Insufficient[0])),
-#        
-#                 'green':  ((0.0, Clear[1], Clear[1]),
-#                            (0.1, Clear[1], PBL[1]),
-#                            (0.2, PBL[1], Ice[1]),
-#                            (0.3, Ice[1], Water[1]),
-#                            (0.4, Water[1], Mixed[1]),
-#                            (0.5, Mixed[1], Dust[1]),
-#                            (0.6, Dust[1], Smoke[1]),
-#                            (0.7, Smoke[1], Urban[1]),
-#                            (0.8, Urban[1], Unidentified[1]),
-#                            (0.9, Unidentified[1], Insufficient[1]),
-#                            (1.0, Insufficient[1], Insufficient[1])),
-#        
-#                 'blue':   ((0.0, Clear[2], Clear[2]),
-#                            (0.1, Clear[2], PBL[2]),
-#                            (0.2, PBL[2], Ice[2]),
-#                            (0.3, Ice[2], Water[2]),
-#                            (0.4, Water[2], Mixed[2]),
-#                            (0.5, Mixed[2], Dust[2]),
-#                            (0.6, Dust[2], Smoke[2]),
-#                            (0.7, Smoke[2], Urban[2]),
-#                            (0.8, Urban[2], Unidentified[2]),
-#                            (0.9, Unidentified[2], Insufficient[2]),
-#                            (1.0, Insufficient[2], Insufficient[2]))}    
-                   
-   # maskmap=LinearSegmentedColormap('MaskMap',cmapdict)
     
     maskmap=ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Smoke,Urban,Unidentified,Insufficient])
     if SNRmask:
@@ -527,27 +491,28 @@ def colormask_plot(mplin,**kwargs):
     else:
         maskin=deepcopy(mplin.scenepanel[0]['colormask'])
         
-    if altrange:
+    if altrange is not None:
         maskin=maskin.loc[:,(maskin.columns>altrange[0]) & (maskin.columns<altrange[-1])]
     
-    if datetimerange:
+    if datetimerange is not None:
         maskin=maskin[(maskin.index>datetimerange[0]) & (maskin.index<datetimerange[-1])]
     
     plotmask=maskin.T[::-1]+0.5
+    plotmask=plotmask.astype('float')
     times=maskin.index
     alts=maskin.columns
     
     numfigs=len(plt.get_fignums())
     fig=plt.figure(numfigs+1)
     
-    ax1=plt.subplot2grid((1,35),(0,0),rowspan=1,colspan=30)
-    cax1=plt.subplot2grid((1,35),(0,30),rowspan=1,colspan=3) 
+    ax1=plt.subplot2grid((1,9),(0,0),rowspan=1,colspan=7)
+    cax1=plt.subplot2grid((1,9),(0,7),rowspan=1,colspan=1) 
     image=ax1.imshow(plotmask,cmap=maskmap,interpolation='none',vmin=0,vmax=10,aspect='auto')
     plt.tight_layout()
 #    mplot.forceAspect(ax1,aspect=ar)
     dateticks(ax1, times, hours = hours,fsize=fontsize)
     ax1.set_xlabel('Hours [Local]',fontsize=fontsize+4)
-    ax1.set_ylabel('Altitude [m]', fontsize=fontsize+4)
+    ax1.set_ylabel('Altitude [km]', fontsize=fontsize+4)
     altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
 #    divider = make_axes_locatable(ax)
 #    cax = divider.append_axes("bottom", size="10%", pad=0.15)
@@ -561,12 +526,14 @@ def colormask_plot(mplin,**kwargs):
     cbarlabels=cbar1.set_ticklabels(sortedlabels)
     
     if saveplot:
-        if plotfilepath:
+        if plotfilepath is not None:
             if os.path.isdir(plotfilepath):
                 savename=os.path.join(plotfilepath,plotfilename)
             else:
                 os.mkdir(plotfilepath)
                 savename=os.path.join(plotfilepath,plotfilename)
+        else:
+            savename=os.path.join(os.getcwd(),plotfilename)
         fig.canvas.print_figure(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
     
     if showplot:

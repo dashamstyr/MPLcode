@@ -505,42 +505,46 @@ def clearall():
         
 if __name__ == '__main__':
     
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
-    altrange=range(150,15030,30)
+#    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
+    os.chdir('K:\MPL Backup 20150706')
+    altrange=np.arange(0.150,5.030,0.030)
     timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
     plotsavepath='.\Figures'
-    startdate=datetime.datetime(2014,05,03,00)
-    enddate=datetime.datetime(2014,05,03,15)
+    startdate=datetime.datetime(2011,05,03,00)
+    enddate=datetime.datetime(2041,05,03,15)
+    
     NRBmask=False
     NRBthresh=3.0
     NRBmin=0.5
-    NRBminalt=150
+    NRBminalt=0.150
     NRBnumprofs=1
     SNRmask=False
-    SNRthresh=3.0
+    SNRthresh=1.0
+    
     molthresh=1.0
     layernoisethresh=1.0
-    sigma0=0.4
+    sigma0=0.1
     cloudthresh=(1.0,0.20)
-    waterthresh=0.10
+    waterthresh=0.05
     icethresh=0.25
     smokethresh=0.05
-    dustthresh=0.15
+    dustthresh=0.20
  
-    doplot=False
-    saveplot=False,
+    doplot=True
+    saveplot=True
     showplot=True
     dolayers=True
-    docorrection=False
+    docorrection=True
     dolayerplot=True
-    docorplot=False
+    docorplot=True
     verbose=False
-    NRB_limits=(0.0,1.0,0.2) 
+    hours=['03','06','09','12','15','18','21']
+    NRB_limits=(0.0,0.2,0.05) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,2e-3,4e-4)
-    ext_limits=(0.0,2e-2,4e-3)
+    back_limits=(0.0,0.05,0.01)
+    ext_limits=(0.0,2.0,0.5)
     interpolate='none'
     
     kwargs={'altrange':altrange,'timestep':timestep,'savetype':savetype,'procsavepath':procsavepath,
@@ -552,7 +556,7 @@ if __name__ == '__main__':
             'depol_limits':depol_limits,'back_limits':back_limits,'ext_limits':ext_limits,
             'interpolate':interpolate, 'sigma0':sigma0, 'cloudthresh':cloudthresh,
             'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-            'dustthresh':dustthresh}
+            'dustthresh':dustthresh,'hours':hours}
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)

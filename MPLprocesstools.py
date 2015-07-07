@@ -59,7 +59,7 @@ def molecular_detect(MPLin,**kwargs):
             tempratvals=bufferedprof[n:n+winsize]
             coef.iloc[n]=np.mean(tempratvals)
         #Step 4: Result from 3 is profile of multiplying factor.Use this to calculate variance of residuals
-        rawvariance=((1/(z/1000.0)**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
+        rawvariance=(1/(z**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
         bufferedvariance=mtools.buffered_array(rawvariance.values,(1,winsize))
         variance=pan.Series(index=rawvariance.index)
         for n in range(len(rawvariance.values)):
@@ -310,14 +310,12 @@ def find_layers(MPLin,**kwargs):
     #use raw data from co-polarized channel (not r-squared corrected) to find layers
     if datatype=='data':
         rawdata=MPLin.data[0]
-        rawdepol=MPLin.data[1]
     elif datatype=='rsq':
         rawdata=MPLin.rsq[0]
-        rawdepol=MPLin.rsq[1]
     elif datatype=='NRB':
         rawdata=MPLin.NRB[0]
-        rawdepol=MPLin.NRB[1]
-    
+
+    rawdepol=MPLin.depolrat[0]
     rawsigma=MPLin.sigma[datatype][0]
     depolsigma=MPLin.sigma['depolrat'][0]  
     panelout=pan.Panel(major_axis=rawdata.index,minor_axis=['Base','Peak','Top',
@@ -691,6 +689,7 @@ def findalllayers(**kwargs):
     savemasks=kwargs.get('savemasks',False)
     savemaskname=kwargs.get('savemaskname','testmasksall.h5')
     sigma0=kwargs.get('sigma0',None)
+    depolsigma0=kwargs.get('depolsigma0',None)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
     smokethresh=kwargs.get('smokethresh',0.05)
@@ -709,7 +708,7 @@ def findalllayers(**kwargs):
                    'cloudthresh':cloudthresh,'datatype':datatype,'CWTwidth':CWTwidth,
                    'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,
                    'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-                   'dustthresh':dustthresh,'sigma0':sigma0}
+                   'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
     layers=find_layers(mplin,**layerkwargs)  
     mol_min=molecular.loc['Layer0']
     try:
@@ -786,7 +785,7 @@ def scenemaker(layerdict,**kwargs):
     molrat=kwargs.get('molrat',0.0)
     moldepol=kwargs.get('moldepol',0.0035)
     udefrat=kwargs.get('udefrat',molrat)
-    udefdepol=kwargs.get('udefdepol',0.0035)
+    udefdepol=kwargs.get('udefdepol',moldepol)
     savefile=kwargs.get('savefile',False)
     savefilename=kwargs.get('savefilename','test.h5')
     colordict=kwargs.get('colordict',None)
@@ -1339,18 +1338,20 @@ if __name__=='__main__':
     savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])
     plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
     timestep='240S'
-    altrange = np.arange(150,15030,30)
+    altrange = np.arange(0.150,15.030,0.030)
     SNRthreshold=1.0
-    molthresh=0.01
+    molthresh=1.0
     layernoisethresh=1.0
-    sigma0=None
+    sigma0=0.1
+    depolsigma0=0.05
     mpltest=mtools.MPL()
     mpltest.fromMPL(filepath)
     mpltest.alt_resample(altrange)
     mpltest.calc_all()
     
     layerdict=findalllayers(mplin=mpltest,timestep=timestep,molthresh=molthresh,
-                            layernoisethresh=layernoisethresh,datatype='NRB',sigma0=sigma0)
+                            layernoisethresh=layernoisethresh,datatype='NRB',sigma0=sigma0,
+                            depolsigma0=depolsigma0)
     mpltest=scenemaker(layerdict)
     mpltest=basiccorrection(mpltest,inplace=True)
     #    mpltemp.save_to_HDF(savefilename)
