@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 import os,sys,site
 home=os.environ['homepath']
 site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
@@ -13,10 +13,10 @@ from matplotlib import cm, ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
 
-from . import MPLtools as mtools
-from . import MPLprocesstools as mproc
-from . import MPLfileproc as mfile
-from . import MPLplot as mplot
+import MPLtools as mtools
+import MPLprocesstools as mproc
+import MPLfileproc as mfile
+import MPLplot as mplot
 
 def progress(datanum,tot_loops):
     """
@@ -37,7 +37,7 @@ def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
     filedir = top-level directory.  If emplty, interactive window is used
     filetype = file extension to look for (.mpl or .h5), defaults to .mpl
     """    
-    altitudes = kwargs.get('altitudes',np.array(None))
+    altitudes = kwargs.get('altitudes',None)
     starttime = kwargs.get('starttime',datetime.datetime(1970,1,1,0))
     endtime = kwargs.get('endtime',datetime.datetime.now())
     timestep = kwargs.get('timestep',None)
@@ -49,10 +49,8 @@ def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
     NRBmask=kwargs.get('NRBmask',True)
     NRBthreshold=kwargs.get('NRBthreshold',3)
     NRBmin=kwargs.get('NRBmin',0.5)
-    minalt=kwargs.get('minalt',150)
+    minalt=kwargs.get('minalt',0.150)
     winsize=kwargs.get('winsize',5)
-    topickle = kwargs.get('topickle',False)
-    picklefile= kwargs.get('picklefile','test.p')
        
     if filedir is None:
         filedir = mtools.set_dir('Sepect top-level folder to search')
@@ -119,10 +117,6 @@ def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
                     
                         tempMPL.calc_all()
                         outlist.append(tempMPL)
-    
-    if topickle:
-        with open(picklefile,'wb') as pf:
-            pickle.dump(outlist,pf)
                 
     return outlist
         
@@ -207,8 +201,8 @@ def dataextractor(datatype='NRB',**kwargs):
     return dfout
 
 def scenefilter(dfin,panelin,**kwargs):
-    filtertype=kwargs.get('filtertype',['aerosol'])
-    filtersubtype=kwargs.get('filtersubtype',None)
+    filtertypes=kwargs.get('filtertype',['aerosol'])
+    filtersubtypes=kwargs.get('filtersubtype',None)
     verbose = kwargs.get('verbose',False)
     inplace=kwargs.get('inplace',True)
     
@@ -217,7 +211,7 @@ def scenefilter(dfin,panelin,**kwargs):
     else:
         dfout=deepcopy(dfin)
         
-    if filtersubtype:
+    if filtersubtypes is not None:
         dftemp=panelin.loc['Sub-Type']
         dffilt=dftemp==filtersubtype
     else:

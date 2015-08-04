@@ -674,13 +674,14 @@ def klett2(P_in,lrat_in,**kwargs):
     
     grouped=lrat_in.groupby(lrat_in)
     
+    #Klett definition of lidar ratio is backscatter/extintion not the other way round
     for name,group in grouped:
         if name==0.0:
             continue
         else:
             lrat.ix[group.index]=1.0/group
             
-#    lrat = (1.0/lrat_in).replace(np.inf,0.0) #Klett definition of lidar ratio is backscatter/extintion not the other way round
+
     lrat_R=3.0/(8.0*np.pi)
     altitudes = P_in.index.values
     
@@ -945,12 +946,12 @@ def profile_input_tester(beta_list=[],alt_list=[],lrat_list=[]):
     
 if __name__ == '__main__':
 
-    z = np.arange(150,15000,3,dtype='float')
+    z = np.arange(0.150,15.000,0.03,dtype='float')
     E0=1.0 
     background = 1e-6
     noise=0.0
     beta_list=[1.0*10**-exp for exp in range(0,8)]
-    alt_list=np.arange(750.0,13750.0,500.0)
+    alt_list=np.arange(0.750,13.750,0.500)
     lrat_list=np.arange(15.0,80.0,5.0)
     lrat_testrange=[0.5]
     

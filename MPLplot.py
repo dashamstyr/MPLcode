@@ -6,14 +6,13 @@ site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
 import numpy as np
 import os, sys
 import numpy as np
-import datetime as dt
 import bisect
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-import pandas as pan
 from MPLcode import MPLtools as mtools
-from matplotlib.colors import LinearSegmentedColormap,ListedColormap
+from matplotlib.colors import ListedColormap
 import matplotlib.ticker as mtick
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 #from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
@@ -466,9 +465,9 @@ def colormask_plot(mplin,**kwargs):
                                        'Ice Cloud':2,
                                        'Water Cloud':3,
                                        'Mixed Cloud':4,
-                                       'Dust-Rich Aerosol':5,
-                                       'Smoke-Rich Aerosol':6,
-                                       'Urban Aerosol':7,
+                                       'Dust':5,
+                                       'Mixed Dust & Smoke':6,
+                                       'Smoke/Urban':7,
                                        'Unidentified Aerosol':8,
                                        'Insufficient Signal':9})
     
@@ -478,13 +477,13 @@ def colormask_plot(mplin,**kwargs):
     Water=(0.0/255.0,0.0/255.0,205.0/255.0)
     Mixed=(186.0/255.0,85.0/255.0,211.0/255.0)
     Dust=(184.0/255.0,134.0/255.0,11.0/255.0)
-    Smoke=(75.0/255.0,75.0/255.0,100.0/255.0)
-    Urban=(220.0/255.0,20.0/255.0,60.0/255.0)
+    Dust_Smoke=(75.0/255.0,75.0/255.0,100.0/255.0)
+    Smoke_Urban=(220.0/255.0,20.0/255.0,60.0/255.0)
     Unidentified=(192.0/255.0,192.0/255.0,192.0/255.0)
     Insufficient=(0.0/255.0,0.0/255.0,0.0/255.0)
                                        
     
-    maskmap=ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Smoke,Urban,Unidentified,Insufficient])
+    maskmap=ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Dust_Smoke,Smoke_Urban,Unidentified,Insufficient])
     if SNRmask:
         mplmasked=mtools.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
         maskin=mplmasked.scenepanel[0]['colormask']
@@ -503,28 +502,28 @@ def colormask_plot(mplin,**kwargs):
     alts=maskin.columns
     
     numfigs=len(plt.get_fignums())
-    fig=plt.figure(numfigs+1)
+    fig=plt.figure(numfigs+1,figsize=(10,5),dpi=100)
     
-    ax1=plt.subplot2grid((1,9),(0,0),rowspan=1,colspan=7)
-    cax1=plt.subplot2grid((1,9),(0,7),rowspan=1,colspan=1) 
+#    ax1=plt.subplot2grid((1,9),(0,0),rowspan=1,colspan=7)
+#    cax1=plt.subplot2grid((1,9),(0,7),rowspan=1,colspan=1) 
+    ax1=fig.add_subplot(111)
     image=ax1.imshow(plotmask,cmap=maskmap,interpolation='none',vmin=0,vmax=10,aspect='auto')
-    plt.tight_layout()
-#    mplot.forceAspect(ax1,aspect=ar)
+#    forceAspect(ax1,2.0)
+    divider=make_axes_locatable(ax1)
+    cax1 = divider.append_axes("right", size="5%", pad=0.15)
+    
     dateticks(ax1, times, hours = hours,fsize=fontsize)
     ax1.set_xlabel('Hours [Local]',fontsize=fontsize+4)
     ax1.set_ylabel('Altitude [km]', fontsize=fontsize+4)
     altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
-#    divider = make_axes_locatable(ax)
-#    cax = divider.append_axes("bottom", size="10%", pad=0.15)
     cbar1=fig.colorbar(image,cax=cax1,orientation='vertical')
-#    cbar1.ax.set_autoscalex_on(False)
     cbar_ticklocs=np.arange(len(colordict))+0.5
     cbar1.set_ticks(cbar_ticklocs)
     cbar1.ax.tick_params(bottom='off',top='off',labelsize=fontsize-4)
     
     sortedlabels=[s[0] for s in sorted(colordict.iteritems(), key=operator.itemgetter(1))]
     cbarlabels=cbar1.set_ticklabels(sortedlabels)
-    
+    plt.tight_layout()
     if saveplot:
         if plotfilepath is not None:
             if os.path.isdir(plotfilepath):
@@ -538,9 +537,11 @@ def colormask_plot(mplin,**kwargs):
     
     if showplot:
         fig.canvas.draw()
+
+
     
 if __name__=='__main__':       
-    altrange = np.arange(150,15030,30)
+    altrange = np.arange(0.150,15.030,0.030)
     starttime = []
     endtime = []
     timestep = '120S'

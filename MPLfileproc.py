@@ -58,8 +58,9 @@ def fileproc(**kwargs):
     NRBmasktype = kwargs.get('NRBmasktype','profile')
     NRBthresh=kwargs.get('NRBthresh',3.0)
     NRBmin=kwargs.get('NRBmin',0.5)
-    NRBminalt=kwargs.get('NRBminalt',150)
+    NRBminalt=kwargs.get('NRBminalt',0.150)
     NRBnumprofs=kwargs.get('NRBnumprofs',1)
+    NRBwinsize=kwargs.get('NRBwinsize',3)
     NRBinplace=kwargs.get('NRBinplace',False)
     
     #findalllayers kwargs
@@ -77,6 +78,7 @@ def fileproc(**kwargs):
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
     sigma0=kwargs.get('sigma0',None)
+    depolsigma0=kwargs.get('depolsigma0',None)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
     smokethresh=kwargs.get('smokethresh',0.05)
@@ -150,45 +152,48 @@ def fileproc(**kwargs):
                      'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
                      'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'sigma0':sigma0,
                      'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-                     'dustthresh':dustthresh,'sigma0':sigma0}
+                     'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
         layerdict=mproc.findalllayers(mplin=MPLdat_event,**layerkwargs)
         MPLdat_event=mproc.scenemaker(layerdict)
-        
-        if dolayerplot:
-            layerplotfilename = '{0}-layers.png'.format(d_filename.split('.')[0])
-            layerplotkwargs={'altrange':altrange,'hours':hours,'fontsize':fsize,'plotfilename':layerplotfilename,
-                             'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,
-                             'plotfilepath':plotsavepath,'showplot':showplot,'saveplot':saveplot}        
-            mplot.colormask_plot(MPLdat_event,**layerplotkwargs)
-    
-    
-    coefplotfilename = '{0}-coefficients.png'.format(d_filename.split('.')[0])
-    coefplotkwargs={'altrange':altrange,'toptype':'backscatter','bottomtype':'extinction',
-                'topplot_limits':back_limits,'bottomplot_limits':ext_limits,
-                'hours':hours,'fsize':fsize,'savefilename':coefplotfilename,
-                'savefilepath':plotsavepath,'SNRmask':SNRmask,'SNRthresh':SNRthresh,
-                'interpolate':interpolate,'SNRtype':SNRtype,'showplot':showplot,'saveplot':saveplot}
-    corkwargs={'refalt':refalt,'calrange':calrange,'method':method,'lrat':lrat,'mode':mode}
-    
-    plotfilename = '{0}.png'.format(d_filename.split('.')[0])
-    plotkwargs={'altrange':altrange,'topplot_limits':NRB_limits,'bottomplot_limits':depol_limits,
-                'hours':hours,'fsize':fsize,'savefilename':plotfilename,'savefilepath':plotsavepath,
-                'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,'interpolate':interpolate,
-                'showplot':showplot,'saveplot':saveplot}
-    if NRBmask:
-        NRBmaskkwargs={'NRBmasktype':NRBmasktype,'NRBthresh':NRBthresh,'NRBmin':NRBmin,
-                       'NRBminalt':NRBminalt,'NRBnumprofs':NRBnumprofs,'inplace':NRBinplace}
-        MPLdat_event=mtools.NRB_mask_all(MPLdat_event,**NRBmaskkwargs)
-#        calrange=mproc.findcalrange(MPLdat_masked)
     
     if docorrection:
+        corkwargs={'refalt':refalt,'calrange':calrange,'method':method,'lrat':lrat,'mode':mode}
+        
         MPLdat_event=mproc.basiccorrection(MPLdat_event,**corkwargs)
-        if docorplot:
-            mplot.doubleplot(MPLdat_event,plotfilename=coefplotfilename,**coefplotkwargs)
     
+
+    if NRBmask:
+        NRBmaskkwargs={'NRBmasktype':NRBmasktype,'NRBthreshold':NRBthresh,'NRBmin':NRBmin,
+                       'minalt':NRBminalt,'numprofs':NRBnumprofs,'winsize':NRBwinsize,
+                       'inplace':NRBinplace}
+        MPLdat_event=mtools.NRB_mask_all(MPLdat_event,**NRBmaskkwargs)
+
+
     if doplot:
+        plotfilename = '{0}.png'.format(d_filename.split('.')[0])
+        plotkwargs={'altrange':altrange,'topplot_limits':NRB_limits,'bottomplot_limits':depol_limits,
+                    'hours':hours,'fsize':fsize,'savefilename':plotfilename,'savefilepath':plotsavepath,
+                    'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,'interpolate':interpolate,
+                    'showplot':showplot,'saveplot':saveplot}
+        
         mplot.doubleplot(MPLdat_event,plotfilename=plotfilename,**plotkwargs)
+    
+    if docorplot:
+        coefplotfilename = '{0}-coefficients.png'.format(d_filename.split('.')[0])
+        coefplotkwargs={'altrange':altrange,'toptype':'backscatter','bottomtype':'extinction',
+                        'topplot_limits':back_limits,'bottomplot_limits':ext_limits,
+                        'hours':hours,'fsize':fsize,'savefilename':coefplotfilename,
+                        'savefilepath':plotsavepath,#'SNRmask':SNRmask,'SNRthresh':SNRthresh,
+                        'interpolate':interpolate,'SNRtype':SNRtype,'showplot':showplot,'saveplot':saveplot}
             
+        mplot.doubleplot(MPLdat_event,plotfilename=coefplotfilename,**coefplotkwargs)
+
+    if dolayerplot:
+        layerplotfilename = '{0}-layers.png'.format(d_filename.split('.')[0])
+        layerplotkwargs={'altrange':altrange,'hours':hours,'fontsize':fsize,'plotfilename':layerplotfilename,
+                         #'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,
+                         'plotfilepath':plotsavepath,'showplot':showplot,'saveplot':saveplot}        
+        mplot.colormask_plot(MPLdat_event,**layerplotkwargs)
 #    if os.path.isdir(procsavepath):
 #        os.chdir(procsavepath)
 #    else:
@@ -250,7 +255,7 @@ def proccessall(**kwargs):
     NRBmask = kwargs.get('NRBmask',True)
     NRBthresh=kwargs.get('NRBthresh',3.0)
     NRBmin=kwargs.get('NRBmin',0.5)
-    NRBminalt=kwargs.get('NRBminalt',150)
+    NRBminalt=kwargs.get('NRBminalt',0.150)
     NRBnumprofs=kwargs.get('NRBnumprofs',1)
 
     
@@ -272,7 +277,7 @@ def proccessall(**kwargs):
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
     smokethresh=kwargs.get('smokethresh',0.05)
-    dustthresh=kwargs.get('dustthresh',0.15)
+    dustthresh=kwargs.get('dustthresh',0.20)
     
     #correction kwargs
     refalt=kwargs.get('refalt',None)
@@ -309,7 +314,7 @@ def proccessall(**kwargs):
                 'docorrection':docorrection,'dolayerplot':dolayerplot,'docorplot':docorplot,'saveplot':saveplot,
                 'savetype':savetype,'showplot':showplot,'procsavepath':procsavepath,
                 'plotsavepath':plotsavepath,'verbose':verbose,'NRBmask':NRBmask,
-                'NRBthresh':NRBthresh,'NRBmin':NRBmin,'NRBminalt':NRBminalt,'NRBnumprofs':NRBnumprofs,
+                'NRBthresh':NRBthresh,'NRBmin':NRBmin,'NRBminalt':NRBminalt,'NRBnumprofs':NRBnumprofs,'NRBwinsize':NRBwinsize,
                 'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,'molthresh':molthresh,
                 'layernoisethresh':layernoisethresh,'bg_alt':bg_alt,'datatype':datatype,
                 'winsize':winsize,'wavelet':wavelet,'noisethresh':noisethresh,'cloudthresh':cloudthresh,
@@ -505,9 +510,9 @@ def clearall():
         
 if __name__ == '__main__':
     
-#    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
-    os.chdir('K:\MPL Backup 20150706')
-    altrange=np.arange(0.150,5.030,0.030)
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
+#    os.chdir('K:\MPL Backup 20150706')
+    altrange=np.arange(0.150,10.030,0.030)
     timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
@@ -520,16 +525,17 @@ if __name__ == '__main__':
     NRBmin=0.5
     NRBminalt=0.150
     NRBnumprofs=1
-    SNRmask=False
-    SNRthresh=1.0
+    SNRmask=True
+    SNRthresh=0.5
     
     molthresh=1.0
     layernoisethresh=1.0
-    sigma0=0.1
+    sigma0=0.05
+    depolsigma0=0.01
     cloudthresh=(1.0,0.20)
-    waterthresh=0.05
-    icethresh=0.25
-    smokethresh=0.05
+    waterthresh=0.10
+    icethresh=0.35
+    smokethresh=0.10
     dustthresh=0.20
  
     doplot=True
@@ -541,7 +547,7 @@ if __name__ == '__main__':
     docorplot=True
     verbose=False
     hours=['03','06','09','12','15','18','21']
-    NRB_limits=(0.0,0.2,0.05) 
+    NRB_limits=(0.0,1.0,0.2) 
     depol_limits=(0.0,0.5,0.1)
     back_limits=(0.0,0.05,0.01)
     ext_limits=(0.0,2.0,0.5)
@@ -554,9 +560,9 @@ if __name__ == '__main__':
             'docorrection':docorrection,'dolayerplot':dolayerplot,'docorplot':docorplot,
             'verbose':verbose,'NRBmask':NRBmask,'SNRmask':SNRmask,'NRB_limits':NRB_limits,
             'depol_limits':depol_limits,'back_limits':back_limits,'ext_limits':ext_limits,
-            'interpolate':interpolate, 'sigma0':sigma0, 'cloudthresh':cloudthresh,
-            'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-            'dustthresh':dustthresh,'hours':hours}
+            'interpolate':interpolate, 'sigma0':sigma0, 'depolsigma0':depolsigma0,
+            'cloudthresh':cloudthresh,'waterthresh':waterthresh,'icethresh':icethresh,
+            'smokethresh':smokethresh,'dustthresh':dustthresh,'hours':hours}
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)

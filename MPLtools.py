@@ -47,7 +47,6 @@ class MPL:
         self.rsq = None  #slot for range corrected, background subtracted data
         self.NRB = None  #slot for Normalized Relative Backscatter array 
         self.depolrat = None  #slot fo depol ratio array
-        self.header = None  #slot for header data
         self.sigma = None   #slot for standard deviation data
         self.SNR = None     #slot for SNR data
         self.backscatter = None #slot for corrected backscatter array
@@ -325,22 +324,33 @@ class MPL:
         
         try:
             copoldat_back=pan.read_hdf(filename,'copol_backscatter')
-            crosspoldat_back=pan.read_hdf(filename,'crosspol_backscatter')
-            self.backscatter=[copoldat_back,crosspoldat_back]
+            self.backscatter=[copoldat_back]
         except KeyError:
             if verbose:
-                print "Warning: No Backscatter file"
+                print "Warning: No Copol Backscatter file"
+        try:
+            crosspoldat_back=pan.read_hdf(filename,'crosspol_backscatter')
+            self.backscatter.append(crosspoldat_back)
+        except KeyError:
+            if verbose:
+                print "Warning: No Crosspol Backscatter file"
         
         try:
             copoldat_ext=pan.read_hdf(filename,'copol_extinction')
-            crosspoldat_ext=pan.read_hdf(filename,'crosspol_extinction')
-            self.extinction=[copoldat_ext,crosspoldat_ext]
+            self.extinction=[copoldat_ext]
         except KeyError:
             if verbose:
-                print "Warning: No Extinction file"
+                print "Warning: No Copol Extinction file"
+        try:
+            crosspoldat_ext=pan.read_hdf(filename,'crosspol_extinction')
+            self.extinction.append(crosspoldat_ext)
+        except KeyError:
+            if verbose:
+                print "Warning: No Crosspol Extinction file"
         
         try:
-            self.scnepanel=pan.read_hdf(filename,'scenepanel')
+            scenedat=pan.read_hdf(filename,'scenepanel')
+            self.scenepanel=[scenedat]
         except KeyError:
             if verbose:
                 print "Warning: No Scene Analysis file"
@@ -375,19 +385,32 @@ class MPL:
                 print "Warning: No sigma-depolrat file"
         try:            
             tempsigma_copol=pan.read_hdf(filename,'sigma_copol_backscatter')
-            tempsigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_backscatter')
-            sigmadict['backscatter']=[tempsigma_copol,tempsigma_crosspol]
+            sigmadict['backscatter']=[tempsigma_copol]
         except KeyError:
             if verbose:
-                print "Warning: No sigma-backscatter file"
+                print "Warning: No sigma-copol-backscatter file"
+        try:        
+            tempsigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_backscatter')
+            sigmadict['backscatter'].append(tempsigma_crosspol)
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-crosspol-backscatter file"
         try:            
             tempsigma_copol=pan.read_hdf(filename,'sigma_copol_extinction')
-            temp_sigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_extinction')
-            sigmadict['extinction']=[tempsigma_copol,temp_sigma_crosspol]
+            sigmadict['extinction']=[tempsigma_copol]
         except KeyError:
             if verbose:
-                print "Warning: No sigma-extinction file"
-                
+                print "Warning: No sigma-copol-extinction file"
+        try:
+            temp_sigma_crosspol=pan.read_hdf(filename,'sigma_crosspol_extinction')
+            sigmadict['extinction'].append(temp_sigma_crosspol)
+        except KeyError:
+            if verbose:
+                print "Warning: No sigma-crosspol-extinction file"
+        
+        if sigmadict:
+            self.sigma=sigmadict
+            
         SNRdict={}
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_data')
@@ -418,15 +441,25 @@ class MPL:
                 print "Warning: No SNR-depolrat file"
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_backscatter')
-            tempSNR_crosspol=pan.read_hdf(filename,'SNR_crosspol_backscatter')
-            SNRdict['backscatter']=[tempSNR_copol,tempSNR_crosspol]
+            SNRdict['backscatter']=[tempSNR_copol]
         except KeyError:
             if verbose:
-                print "Warning: No SNR-backscatter file"
+                print "Warning: No SNR-copol-backscatter file"
+        try:
+            tempSNR_crosspol=pan.read_hdf(filename,'SNR_crosspol_backscatter')
+            SNRdict['backscatter'].append(tempSNR_crosspol)
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-crosspol-backscatter file"
         try:            
             tempSNR_copol=pan.read_hdf(filename,'SNR_copol_extinction')
+            SNRdict['extinction']=[tempSNR_copol]
+        except KeyError:
+            if verbose:
+                print "Warning: No SNR-copol-extinction file"
+        try:
             temp_SNR_crosspol=pan.read_hdf(filename,'SNR_crosspol_extinction')
-            SNRdict['extinction']=[tempSNR_copol,temp_SNR_crosspol]
+            SNRdict['extinction'].append(temp_SNR_crosspol)
         except KeyError:
             if verbose:
                 print "Warning: No SNR-extinction file"
@@ -436,17 +469,16 @@ class MPL:
             
         return self
         
-    def save_to_HDF(self, filename, appendflag = 'false'):
+    def save_to_HDF(self, filename):
         
         store = pan.HDFStore(filename)
         
         store['header'] = self.header
         
-        if self.data is not None:
-            df_copol = self.data[0]
-            df_crosspol = self.data[1]
-            store['copol_raw'] = df_copol
-            store['crosspol_raw'] = df_crosspol
+        df_copol = self.data[0]
+        df_crosspol = self.data[1]
+        store['copol_raw'] = df_copol
+        store['crosspol_raw'] = df_crosspol
         
         if self.rsq is not None:
             df_copol = self.rsq[0]
@@ -466,15 +498,17 @@ class MPL:
         
         if self.backscatter is not None:
             df_backscatter_copol = self.backscatter[0]
-            df_backscatter_crosspol = self.backscatter[1]
             store['copol_backscatter'] = df_backscatter_copol
-            store['crosspol_backscatter'] = df_backscatter_crosspol
+            if len(self.backscatter)>1:
+                df_backscatter_crosspol = self.backscatter[1]
+                store['crosspol_backscatter'] = df_backscatter_crosspol
         
         if self.extinction is not None:
             df_extinction_copol = self.extinction[0]
-            df_extinction_crosspol = self.extinction[1]
             store['copol_extinction'] = df_extinction_copol
-            store['crosspol_extinction'] = df_extinction_crosspol
+            if len(self.extinction)>1:
+                df_extinction_crosspol = self.extinction[1]
+                store['crosspol_extinction'] = df_extinction_crosspol
         
         if self.scenepanel is not None:
             scenepanel = self.scenepanel[0]
@@ -1775,8 +1809,8 @@ def NRB_mask_create(dfin,**kwargs):
     
     """
     NRBthreshold=kwargs.get('NRBthreshold',3)
-    NRBmin=kwargs.get('NRBmin',0.5)
-    minalt=kwargs.get('minalt',150)
+    NRBmin=kwargs.get('NRBmin',0.05)
+    minalt=kwargs.get('minalt',0.150)
     numprofs=kwargs.get('numprofs',1)
     winsize=kwargs.get('winsize',5)
     
@@ -1806,7 +1840,7 @@ def NRB_mask_create(dfin,**kwargs):
     threshseries=pan.Series(data=threshalts,index=dfin.index)
     return threshseries
 
-def NRB_mask_apply(dfin,threshseries,nopassval=float('nan'),inplace=True):
+def NRB_mask_apply(dfin,threshseries,nopassval=np.nan,inplace=True):
     
     if inplace:
         dfout=dfin
@@ -1824,13 +1858,13 @@ def NRB_mask_all(MPLin,**kwargs):
         and applies it to all data sets within an MPL class object
     """
     
-    threshseries=kwargs.get('threshseries',[])
-    NRBthreshold=kwargs.get('NRBthreshold',3)
+    threshseries=kwargs.get('threshseries',None)
     NRBmasktype=kwargs.get('NRBmasktype','profile')
+    NRBthreshold=kwargs.get('NRBthreshold',3)
     NRBmin=kwargs.get('NRBmin',0.5)
-    minalt=kwargs.get('minalt',150)
+    minalt=kwargs.get('minalt',0.150)
     numprofs=kwargs.get('numprofs',1)
-    winsize=kwargs.get('winsize',5)
+    winsize=kwargs.get('winsize',3)
     nopassval=kwargs.get('nopassval',np.nan)
     inplace=kwargs.get('inplace',True)
     
@@ -1839,7 +1873,7 @@ def NRB_mask_all(MPLin,**kwargs):
     else:
         MPLout=deepcopy(MPLin)
     
-    if not any(threshseries):
+    if threshseries is None:
         threshkwargs= {'NRBthreshold':NRBthreshold,'masktype':NRBmasktype,'NRBmin':NRBmin,'minalt':minalt,
                        'numprofs':numprofs,'winsize':winsize,'nopassval':nopassval}
         try:
@@ -1851,22 +1885,34 @@ def NRB_mask_all(MPLin,**kwargs):
     for n in range(MPLout.header['numchans'][0]):
         MPLout.data[n]=NRB_mask_apply(MPLout.data[n],threshseries)
         
-        if MPLout.rsq:
+        if MPLout.rsq is not None:
             MPLout.rsq[n]=NRB_mask_apply(MPLout.rsq[n],threshseries)
-        if MPLout.NRB:
+        if MPLout.NRB is not None:
             MPLout.NRB[n]=NRB_mask_apply(MPLout.NRB[n],threshseries)
-        if MPLout.backscatter:
-            MPLout.backscatter[n]=NRB_mask_apply(MPLout.backscatter[n],threshseries)
-        if MPLout.extinction:
-            MPLout.extinction[n]=NRB_mask_apply(MPLout.extinction[n],threshseries)
+        if MPLout.backscatter is not None:
+            try:
+                MPLout.backscatter[n]=NRB_mask_apply(MPLout.backscatter[n],threshseries)
+            except IndexError:
+                continue
+        if MPLout.extinction is not None:
+            try:
+                MPLout.extinction[n]=NRB_mask_apply(MPLout.extinction[n],threshseries)
+            except IndexError:
+                continue
            
-    if MPLout.depolrat:
+    if MPLout.depolrat is not None:
         MPLout.depolrat[0]=NRB_mask_apply(MPLout.depolrat[0],threshseries)
     
-    if MPLout.scenepanel:
-        for i in MPLout.scenepanel[0].items:
-            MPLout.scenepanel[0][i]=NRB_mask_apply(MPLout.scenepanel[0][i],threshseries,nopassval='Insufficient Signal')
-     
+    if MPLout.scenepanel is not None:
+        tempscene=MPLout.scenepanel[0]
+        tempscene['Type']=NRB_mask_apply(tempscene['Type'],threshseries,nopassval='Insufficient Signal')
+        tempscene['Sub-Type']=NRB_mask_apply(tempscene['Sub-Type'],threshseries,nopassval='Insufficient Signal')
+        tempscene['colormask']=NRB_mask_apply(tempscene['colormask'],threshseries,nopassval=9)
+        tempscene['Lidar_Ratio']=NRB_mask_apply(tempscene['Lidar_Ratio'],threshseries,nopassval=np.nan)
+        tempscene['Depol']=NRB_mask_apply(tempscene['Depol'],threshseries,nopassval=np.nan)
+        tempscene['Delta']=NRB_mask_apply(tempscene['Delta'],threshseries,nopassval=np.nan)
+        tempscene['Base']=NRB_mask_apply(tempscene['Base'],threshseries,nopassval=np.nan)
+        tempscene['Top']=NRB_mask_apply(tempscene['Top'],threshseries,nopassval=np.nan)
     return MPLout
     
 #    def save_to_MPL(self,filename):
@@ -2006,4 +2052,9 @@ if __name__ == '__main__':
 #    
     MPLtest.calc_all(verbose=True)
     
+    print 'Calculate NRB mask'
+    
+    MPLmasked=NRB_mask_all(MPLtest,inplace=False)
 #    os.chdir(olddir)
+
+    MPLtest

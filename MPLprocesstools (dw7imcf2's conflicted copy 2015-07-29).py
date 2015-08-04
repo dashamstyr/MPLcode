@@ -62,11 +62,7 @@ def molecular_detect(MPLin,**kwargs):
 #            coef.iloc[n]=np.mean(tempratvals)
         #Step 4: Result from 3 is profile of multiplying factor.Use this to calculate variance of residuals
         rawvariance=(1/(z**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
-        bufferedvariance=mtools.buffered_array(rawvariance.values,(1,winsize))
-        variance=pan.Series(index=rawvariance.index)
-        for n in range(len(rawvariance.values)):
-            tempvarvals=bufferedvariance[n:n+winsize]
-            variance.iloc[n]=np.mean(tempvarvals)
+        variance=pan.Series(genfilt(rawvariance,np.mean,winsize),index=rawvariance.index)
 
         sigmaprof=sigmain.ix[proftime]
         #Step 5: Regions where variance is below threshold multiple of noise varaince(sigma squared)
@@ -83,11 +79,14 @@ def molecular_detect(MPLin,**kwargs):
                 oldlayer=[]
                 for key,count in groupby(enumerate(tempcounts), lambda (i,x):i-x):                    
                     layercount=map(operator.itemgetter(1),count)
-                    if oldlayer and layercount[0]-oldlayer[-1]<=2:
-                        layercount+=oldlayer
                     layercount.sort()
+                    if oldlayer and layercount[0]-oldlayer[-1]<=2:
+                        layercount+=oldlayer                    
                     if len(layercount)==1:
-                        oldlayer+=layercount
+                        if oldlayer and layercount[0]-oldlayer[-1]<=1:
+                            oldlayer+=layercount
+                        else:
+                            continue
                     else:
                         layeralt=[x*altstep for x in layercount]
                         if n!=0 and layeralt[0]<=panelout.loc['Layer{0}'.format(n-1),proftime][0]:
@@ -208,8 +207,12 @@ def PBL_detect(MPLin,**kwargs):
         CWTminvals=CWTvals[minloc]
         CWTminalts=z[minloc]
         
-        tempmolht=mol_min.loc[i] 
-        templayerht=layer_min.loc[i]
+        tempmolht=mol_min.loc[i,'Base']
+        
+        try:
+            templayerht=layer_min.loc[i,'Base']
+        except AttributeError:
+            templayerht=layer_min
             
         edgealt=z[layerwidth-1]
         
@@ -222,10 +225,10 @@ def PBL_detect(MPLin,**kwargs):
         try:
             PBLval=min([v[0] for v in zip(CWTminvals,CWTminalts) if edgealt<=v[1]<=maxalt])                
         except ValueError:
-            PBLval=None
+            PBLval=[]
             PBLout.ix[i]=maxalt
                 
-        if PBLval is not None:
+        if PBLval:
             PBLout.ix[i]=CWTminalts[np.where(CWTminvals==PBLval)]
             
     return PBLout
@@ -608,7 +611,7 @@ def aerosoltypefilter(depolrat,**kwargs):
     
     if depolrat <= smokethresh:
         typeout='Smoke / Urban'
-        ratout=65.0
+        ratout=70.0
     elif depolrat <= dustthresh:
         typeout='Mixed Dust & Smoke'
         ratout=50.0
@@ -708,11 +711,11 @@ def findalllayers(**kwargs):
                    'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
                    'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
     layers=find_layers(mplin,**layerkwargs)  
-    mol_min=molecular.loc['Layer0']['Base']
+    mol_min=molecular.loc['Layer0']
     try:
-        layer_min=layers.loc['Layer0']['Base']
+        layer_min=layers.loc['Layer0']
     except KeyError:
-        layer_min=pan.Series(data=mplin.NRB[0].columns[-1],index=mplin.NRB[0].index)
+        layer_min=mplin.NRB[0].columns[-1]
         
     PBLkwargs = {'wavelet':PBLwavelet,'mol_min':mol_min,'layer_min':layer_min,
                  'widths':PBLCWTrange,'layerwidth':minwidth,'bg_alt':bg_alt,
@@ -1366,12 +1369,12 @@ if __name__=='__main__':
     os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
     savefilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed'
     plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Figures'
-    filepath=mtools.get_files('Select raw files',filetype=('.mpl','*.mpl'))[0]
+    filepath=mtools.get_files('Select raw file',filetype=('.mpl','*.mpl'))[0]
     filename=os.path.split(filepath)[-1]
     savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])
     plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
     timestep='240S'
-    altrange = np.arange(0.150,10.030,0.030)
+    altrange = np.arange(0.150,15.030,0.030)
     SNRthreshold=1.0
     molthresh=1.0
     layernoisethresh=1.0
@@ -1408,7 +1411,7 @@ if __name__=='__main__':
 #    
     mplot.colormask_plot(mpltest,saveplot=False,plotfilepath=plotfilepath,plotfilename=plotfilename)
 
-#    AOD=AODcalc(mpltest)
-#    plt.figure()
-#    AOD.plot()
+    AOD=AODcalc(mpltest)
+    plt.figure()
+    AOD.plot()
 #    
