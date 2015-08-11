@@ -42,6 +42,7 @@ def fileproc(**kwargs):
     rawfiles = kwargs.get('rawfiles',None)
     altrange = kwargs.get('altrange',np.arange(150,15000,30))        
     timestep = kwargs.get('timestep','60S')
+    saveproc = kwargs.get('saveproc',True)
     doplot = kwargs.get('doplot',False)
     dolayers = kwargs.get('dolayers',False)
     docorrection = kwargs.get('docorrection',False)
@@ -76,13 +77,15 @@ def fileproc(**kwargs):
     minwidth=kwargs.get('minwidth',4)
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
-    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(5,15))
+    PBLwidth=kwargs.get('PBLwidth',10)
     sigma0=kwargs.get('sigma0',None)
     depolsigma0=kwargs.get('depolsigma0',None)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
     smokethresh=kwargs.get('smokethresh',0.05)
     dustthresh=kwargs.get('dustthresh',0.15)
+    maxaeroalt=kwargs.get('maxaeroalt',10.0)
     
     #correction kwargs
     refalt=kwargs.get('refalt',None)
@@ -112,18 +115,7 @@ def fileproc(**kwargs):
     [path,endfile] = os.path.split(rawfiles[-1])
     starttime = kwargs.get('starttime',MPLtodatetime(startfile))
     endtime = kwargs.get('endtime',MPLtodatetime(endfile))
-    
-    if savetype=='standard':
-        if len(rawfiles) == 1:   
-            d_filename = '{0}_proc.h5'.format(startfile.split('.')[0])
-        else:        
-            d_filename = '{0}-{1}_proc.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
-    elif savetype=='IDL':
-        if len(rawfiles) == 1:   
-            d_filename = '{0}_IDL.h5'.format(startfile.split('.')[0])
-        else:        
-            d_filename = '{0}-{1}_IDL.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
-    
+        
     for r in rawfiles:
         [path,tempname] = os.path.split(r)
         if starttime <= MPLtodatetime(tempname) <= endtime: 
@@ -150,9 +142,9 @@ def fileproc(**kwargs):
                      'molthresh':molthresh,'winsize':winsize,'layernoisethresh':layernoisethresh,
                      'wavelet':wavelet,'noisethresh':noisethresh,'cloudthresh':cloudthresh,
                      'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
-                     'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'sigma0':sigma0,
+                     'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'PBLwidth':PBLwidth,'sigma0':sigma0,
                      'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
-                     'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
+                     'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0,'maxaeroalt':maxaeroalt}
         layerdict=mproc.findalllayers(mplin=MPLdat_event,**layerkwargs)
         MPLdat_event=mproc.scenemaker(layerdict)
     
@@ -161,7 +153,21 @@ def fileproc(**kwargs):
         
         MPLdat_event=mproc.basiccorrection(MPLdat_event,**corkwargs)
     
-
+    if saveproc:
+        if savetype=='standard':
+            if len(rawfiles) == 1:   
+                d_filename = '{0}_proc.h5'.format(startfile.split('.')[0])
+            else:        
+                d_filename = '{0}-{1}_proc.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
+            savepath=os.path.join(procsavepath,d_filename)
+            MPLdat_event.save_to_HDF(savepath)
+        elif savetype=='IDL':
+            if len(rawfiles) == 1:   
+                d_filename = '{0}_IDL.h5'.format(startfile.split('.')[0])
+            else:        
+                d_filename = '{0}-{1}_IDL.h5'.format(startfile.split('.')[0],endfile.split('.')[0])
+            savepath=os.path.join(procsavepath,d_filename)
+            MPLdat_event.save_to_IDL(savepath)
     if NRBmask:
         NRBmaskkwargs={'NRBmasktype':NRBmasktype,'NRBthreshold':NRBthresh,'NRBmin':NRBmin,
                        'minalt':NRBminalt,'numprofs':NRBnumprofs,'winsize':NRBwinsize,
@@ -510,9 +516,9 @@ def clearall():
         
 if __name__ == '__main__':
     
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Whistler-0327')
 #    os.chdir('K:\MPL Backup 20150706')
-    altrange=np.arange(0.150,10.030,0.030)
+    altrange=np.arange(0.150,15.530,0.030)
     timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
@@ -546,11 +552,12 @@ if __name__ == '__main__':
     dolayerplot=True
     docorplot=True
     verbose=False
-    hours=['03','06','09','12','15','18','21']
-    NRB_limits=(0.0,1.0,0.2) 
+#    hours=['02','04','06','08','10','12','14','168','18','20','22']
+    hours=['06','06','09','12','15','18','21']
+    NRB_limits=(0.0,0.5,0.1) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,0.05,0.01)
-    ext_limits=(0.0,2.0,0.5)
+    back_limits=(0.0,1e-2,2e-3)
+    ext_limits=(0.0,2e-1,4e-2)
     interpolate='none'
     
     kwargs={'altrange':altrange,'timestep':timestep,'savetype':savetype,'procsavepath':procsavepath,

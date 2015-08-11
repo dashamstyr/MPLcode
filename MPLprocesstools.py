@@ -52,50 +52,53 @@ def molecular_detect(MPLin,**kwargs):
     for proftime in NRBin.index:    
     #Step 2:extract NRB profile
         tempprof=NRBin.ix[proftime]
-        #Step 3: calculate ratio of profile to molecular and use smoothing window to reduce noise
-        temprat=Pmol_cor.div(tempprof)
-        coef=pan.Series(genfilt(temprat,np.mean,winsize),index=temprat.index)
-#        bufferedprof=mtools.buffered_array(temprat.values,(1,winsize))
-#        coef=pan.Series(index=temprat.index)
-#        for n in range(len(temprat.values)):
-#            tempratvals=bufferedprof[n:n+winsize]
-#            coef.iloc[n]=np.mean(tempratvals)
-        #Step 4: Result from 3 is profile of multiplying factor.Use this to calculate variance of residuals
-        rawvariance=(1/(z**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
-        bufferedvariance=mtools.buffered_array(rawvariance.values,(1,winsize))
-        variance=pan.Series(index=rawvariance.index)
-        for n in range(len(rawvariance.values)):
-            tempvarvals=bufferedvariance[n:n+winsize]
-            variance.iloc[n]=np.mean(tempvarvals)
-
-        sigmaprof=sigmain.ix[proftime]
-        #Step 5: Regions where variance is below threshold multiple of noise varaince(sigma squared)
-        #identified as molecular regions
-        tempmask=pan.Series(z,index=[v<=varthresh*s**2 for v,s in zip(variance,sigmaprof)])
-        tempgroups=tempmask.groupby(level=0)
-        
-        for g in tempgroups:
-            if g[0]:
-                tempalts=g[1].values
-                tempcounts=list(set([int(x/altstep) for x in tempalts]))
-                tempcounts.sort()                
-                n=0
-                oldlayer=[]
-                for key,count in groupby(enumerate(tempcounts), lambda (i,x):i-x):                    
-                    layercount=map(operator.itemgetter(1),count)
-                    if oldlayer and layercount[0]-oldlayer[-1]<=2:
-                        layercount+=oldlayer
-                    layercount.sort()
-                    if len(layercount)==1:
-                        oldlayer+=layercount
-                    else:
-                        layeralt=[x*altstep for x in layercount]
-                        if n!=0 and layeralt[0]<=panelout.loc['Layer{0}'.format(n-1),proftime][0]:
-                            n=n-1
-                        panelname='Layer{0}'.format(n)
-                        panelout.loc[panelname,proftime]=[layeralt[0],layeralt[-1]]
-                        n+=1
-                        oldlayer=layercount
+        if pan.isnull(tempprof).all():
+            panelout.loc[:,proftime]=[np.nan,np.nan]
+        else:
+            #Step 3: calculate ratio of profile to molecular and use smoothing window to reduce noise
+            temprat=Pmol_cor.div(tempprof)
+            coef=pan.Series(genfilt(temprat,np.mean,winsize),index=temprat.index)
+    #        bufferedprof=mtools.buffered_array(temprat.values,(1,winsize))
+    #        coef=pan.Series(index=temprat.index)
+    #        for n in range(len(temprat.values)):
+    #            tempratvals=bufferedprof[n:n+winsize]
+    #            coef.iloc[n]=np.mean(tempratvals)
+            #Step 4: Result from 3 is profile of multiplying factor.Use this to calculate variance of residuals
+            rawvariance=(1/(z**2.0)*(tempprof-(Pmol_cor/coef)))**2.0
+            bufferedvariance=mtools.buffered_array(rawvariance.values,(1,winsize))
+            variance=pan.Series(index=rawvariance.index)
+            for n in range(len(rawvariance.values)):
+                tempvarvals=bufferedvariance[n:n+winsize]
+                variance.iloc[n]=np.mean(tempvarvals)
+    
+            sigmaprof=sigmain.ix[proftime]
+            #Step 5: Regions where variance is below threshold multiple of noise varaince(sigma squared)
+            #identified as molecular regions
+            tempmask=pan.Series(z,index=[v<=varthresh*s**2 for v,s in zip(variance,sigmaprof)])
+            tempgroups=tempmask.groupby(level=0)
+            
+            for g in tempgroups:
+                if g[0]:
+                    tempalts=g[1].values
+                    tempcounts=[int(round(x/altstep)) for x in tempalts]
+    #                tempcounts.sort()                
+                    n=0
+                    oldlayer=[]
+                    for key,count in groupby(enumerate(tempcounts), lambda (i,x):i-x):                    
+                        layercount=map(operator.itemgetter(1),count)
+                        if oldlayer and layercount[0]-oldlayer[-1]<=2:
+                            layercount+=oldlayer
+                        layercount.sort()
+                        if len(layercount)==1:
+                            oldlayer+=layercount
+                        else:
+                            layeralt=[x*altstep for x in layercount]
+                            if n!=0 and layeralt[0]<=panelout.loc['Layer{0}'.format(n-1),proftime][0]:
+                                n=n-1
+                            panelname='Layer{0}'.format(n)
+                            panelout.loc[panelname,proftime]=[layeralt[0],layeralt[-1]]
+                            n+=1
+                            oldlayer=layercount
     if savefile:
         store=pan.HDFStore(savefilename)
         store['molecular']=panelout
@@ -166,8 +169,9 @@ def PBL_detect(MPLin,**kwargs):
     """
     """    
     wavelet=kwargs.get('wavelet',dog)
-    widths=kwargs.get('widths',[4])
-    layerwidth=kwargs.get('layerwidth',4)
+    widths=kwargs.get('widths',np.arange(5,15))
+    layerwidth=kwargs.get('layerwidth',10)
+    numprofs=kwargs.get('numprofs',1)
     bg_alt=kwargs.get('bg_alt',None)
     datatype=kwargs.get('datatype','NRB')
     layer_min=kwargs.get('layer_min',None)
@@ -191,42 +195,46 @@ def PBL_detect(MPLin,**kwargs):
     
     PBLout = pan.Series(index=rawdata.index)
     z=rawdata.columns.values
-        
-    for i in rawdata.index:
-        tempprof=rawdata.ix[i]           
-        tempcwt=signal.cwt(tempprof,wavelet,widths)
-        tempmin=maxmin(tempcwt,widths,np.less)
-        
-        #use only width of layerwidth for now            
-        minloc=[minval[1] for minval in tempmin if minval[0]==layerwidth]
-        
-        #PBL height can only be negative (min) values and edge effects are removed
-        #by remving edges layerwidth in size
-        
-        layerwidthindex=np.where(widths==layerwidth)[0]
-        CWTvals=tempcwt[layerwidthindex,:][0]
-        CWTminvals=CWTvals[minloc]
-        CWTminalts=z[minloc]
-        
-        tempmolht=mol_min.loc[i] 
-        templayerht=layer_min.loc[i]
-            
-        edgealt=z[layerwidth-1]
-        
-        if np.isnan(templayerht) or templayerht<edgealt:
-            maxalt=z[-1]
+    smootheddata=pan.DataFrame(genfilt(rawdata,np.mean,(numprofs,1)),
+                               index=rawdata.index, columns=rawdata.columns)
+    for i in smootheddata.index:
+        tempprof=smootheddata.ix[i] 
+        if pan.isnull(tempprof).all():
+            PBLout.ix[i]=np.nan
         else:
-            maxalt=templayerht
-        
-        
-        try:
-            PBLval=min([v[0] for v in zip(CWTminvals,CWTminalts) if edgealt<=v[1]<=maxalt])                
-        except ValueError:
-            PBLval=None
-            PBLout.ix[i]=maxalt
+            tempcwt=signal.cwt(tempprof,wavelet,widths)
+            tempmin=maxmin(tempcwt,widths,np.less)
+            
+            #use only width of layerwidth for now            
+            minloc=[minval[1] for minval in tempmin if minval[0]==layerwidth]
+            
+            #PBL height can only be negative (min) values and edge effects are removed
+            #by remving edges layerwidth in size
+            
+            layerwidthindex=np.where(widths==layerwidth)[0]
+            CWTvals=tempcwt[layerwidthindex,:][0]
+            CWTminvals=CWTvals[minloc]
+            CWTminalts=z[minloc]
+            
+            tempmolht=mol_min.loc[i] 
+            templayerht=layer_min.loc[i]
                 
-        if PBLval is not None:
-            PBLout.ix[i]=CWTminalts[np.where(CWTminvals==PBLval)]
+            edgealt=z[layerwidth-1]
+            
+            if np.isnan(templayerht) or templayerht<edgealt:
+                maxalt=z[-1]
+            else:
+                maxalt=templayerht
+            
+            
+            try:
+                PBLval=min([v[0] for v in zip(CWTminvals,CWTminalts) if edgealt<=v[1]<=maxalt])                
+            except ValueError:
+                PBLval=None
+                PBLout.ix[i]=maxalt
+                    
+            if PBLval is not None:
+                PBLout.ix[i]=CWTminalts[np.where(CWTminvals==PBLval)]
             
     return PBLout
 
@@ -290,6 +298,7 @@ def find_layers(MPLin,**kwargs):
     sigma0=kwargs.get('sigma0',None)
     depolsigma0=kwargs.get('depolsigma0',None)
     cloudthresh=kwargs.get('cloudthresh',(1.0,0.4))
+    maxaeroalt=kwargs.get('maxaeroalt',10.0)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.35)
     smokethresh=kwargs.get('smokethresh',0.10)
@@ -321,73 +330,80 @@ def find_layers(MPLin,**kwargs):
     
     for i in rawdata.index:
         tempprof=rawdata.ix[i]
-        tempdepolprof=rawdepol.ix[i]
-        tempsigma=rawsigma.ix[i]
-        tempdepolsigma=depolsigma.ix[i]
-#        tempdepolratprof=rawdepolrat.ix[i]
-#        z=tempprof.index
-        #set baseline noise level based on 
-        if sigma0:
-            tempsigma0=sigma0
+        if pan.isnull(tempprof).all():
+            continue
         else:
-            tempsigma0=np.mean(tempsigma.ix[bg_alt:])
-        
-        if depolsigma0:
-            tempdepolsigma0=depolsigma0
-        else:
-            tempdepolsigma0=np.mean(tempdepolsigma.ix[bg_alt:])
-        
-        temp_cwt=signal.cwt(tempprof,wavelet,widths)
-        tempmax=maxmin(temp_cwt,widths,np.greater)
-        tempmin=maxmin(temp_cwt,widths,np.less)
-        
-        #use only width of 2 for now
-        
-        minloc=[minval[1] for minval in tempmin if minval[0]==CWTwidth]
-        maxloc=[maxval[1] for maxval in tempmax if maxval[0]==CWTwidth]
-        filterkwargs={'thresh':noisethresh,'minwidth':minwidth,'minsep':minsep,
-                      'depolwidths':widths,'depollayerwidth':minwidth,
-                      'depolwavelet':wavelet}
-        templayers=layer_filter(tempprof,tempsigma0,tempdepolprof,tempdepolsigma0,
-                                maxloc,minloc,datatype,**filterkwargs)
-        
-        for n in range(len(templayers)):
-            indices=templayers[n]
-            
-            minalt=indices[0]
-            peakalt=indices[1]
-            maxalt=indices[2]
-            delta=indices[3]
-            meandepolrat=indices[4]
-            panelname='Layer{0}'.format(n)
-#            layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
-#            meandepolrat=np.mean(layerdepolratprof)
-            peakval=tempprof.ix[peakalt]
-            if peakval <= 0.0 or meandepolrat <= 0.0:
-                layertype='Insufficient Signal'
-                layersubtype='Insufficient Signal'
-                layerratio=udefrat
-            elif peakval >= cloudthresh[0]:
-                layertype='Cloud'  
-                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
-                                                       icethresh=icethresh)    
-            elif peakval >= cloudthresh[1] and meandepolrat>0.25:
-                layertype='Cloud'  
-                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
-                                                       icethresh=icethresh)
+            tempdepolprof=rawdepol.ix[i]
+            tempsigma=rawsigma.ix[i]
+            tempdepolsigma=depolsigma.ix[i]
+    #        tempdepolratprof=rawdepolrat.ix[i]
+    #        z=tempprof.index
+            #set baseline noise level based on 
+            if sigma0:
+                tempsigma0=sigma0
             else:
-                layertype='Aerosol'
-                layersubtype,layerratio=aerosoltypefilter(meandepolrat,smokethresh=smokethresh,
-                                                          dustthresh=dustthresh)
-                                
-            panelout.loc[panelname,i,'Base']=minalt
-            panelout.loc[panelname,i,'Peak']=peakalt
-            panelout.loc[panelname,i,'Top']=maxalt
-            panelout.loc[panelname,i,'Delta']=delta
-            panelout.loc[panelname,i,'Depol']=meandepolrat
-            panelout.loc[panelname,i,'Type']=layertype
-            panelout.loc[panelname,i,'Sub-Type']=layersubtype
-            panelout.loc[panelname,i,'Lidar_Ratio']=layerratio
+                tempsigma0=np.mean(tempsigma.ix[bg_alt:])
+            
+            if depolsigma0:
+                tempdepolsigma0=depolsigma0
+            else:
+                tempdepolsigma0=np.mean(tempdepolsigma.ix[bg_alt:])
+            
+            temp_cwt=signal.cwt(tempprof,wavelet,widths)
+            tempmax=maxmin(temp_cwt,widths,np.greater)
+            tempmin=maxmin(temp_cwt,widths,np.less)
+            
+            #use only width of 2 for now
+            
+            minloc=[minval[1] for minval in tempmin if minval[0]==CWTwidth]
+            maxloc=[maxval[1] for maxval in tempmax if maxval[0]==CWTwidth]
+            filterkwargs={'thresh':noisethresh,'minwidth':minwidth,'minsep':minsep,
+                          'depolwidths':widths,'depollayerwidth':minwidth,
+                          'depolwavelet':wavelet}
+            templayers=layer_filter(tempprof,tempsigma0,tempdepolprof,tempdepolsigma0,
+                                    maxloc,minloc,datatype,**filterkwargs)
+            
+            for n in range(len(templayers)):
+                indices=templayers[n]
+                
+                minalt=indices[0]
+                peakalt=indices[1]
+                maxalt=indices[2]
+                delta=indices[3]
+                meandepolrat=indices[4]
+                panelname='Layer{0}'.format(n)
+    #            layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
+    #            meandepolrat=np.mean(layerdepolratprof)
+                peakval=tempprof.ix[peakalt]
+                if peakval <= 0.0 or meandepolrat <= 0.0:
+                    layertype='Insufficient Signal'
+                    layersubtype='Insufficient Signal'
+                    layerratio=udefrat
+                elif peakval >= cloudthresh[0]:
+                    layertype='Cloud'  
+                    layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                           icethresh=icethresh)    
+                elif peakval >= cloudthresh[1] and meandepolrat>waterthresh:
+                    layertype='Cloud'  
+                    layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                           icethresh=icethresh)
+                elif minalt >= maxaeroalt:
+                    layertype='Cloud'
+                    layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                           icethresh=icethresh)
+                else:                                       
+                    layertype='Aerosol'
+                    layersubtype,layerratio=aerosoltypefilter(meandepolrat,smokethresh=smokethresh,
+                                                              dustthresh=dustthresh)
+                                    
+                panelout.loc[panelname,i,'Base']=minalt
+                panelout.loc[panelname,i,'Peak']=peakalt
+                panelout.loc[panelname,i,'Top']=maxalt
+                panelout.loc[panelname,i,'Delta']=delta
+                panelout.loc[panelname,i,'Depol']=meandepolrat
+                panelout.loc[panelname,i,'Type']=layertype
+                panelout.loc[panelname,i,'Sub-Type']=layersubtype
+                panelout.loc[panelname,i,'Lidar_Ratio']=layerratio
     
     if savefile:
         store=pan.HDFStore(savefilename)
@@ -610,7 +626,7 @@ def aerosoltypefilter(depolrat,**kwargs):
         typeout='Smoke / Urban'
         ratout=65.0
     elif depolrat <= dustthresh:
-        typeout='Mixed Dust & Smoke'
+        typeout='Polluted Dust'
         ratout=50.0
     else:
         typeout='Dust'
@@ -631,7 +647,7 @@ def colormask_fromdict(mplin,pblin,molin,layersin):
                'Water Cloud':3,
                'Mixed Cloud':4,
                'Dust':5,
-               'Mixed Dust & Smoke':6,
+               'Polluted Dust':6,
                'Smoke / Urban':7,
                'Unidentified Aerosol':8,
                'Insufficient Signal':9}
@@ -678,12 +694,15 @@ def findalllayers(**kwargs):
     winsize=kwargs.get('winsize',5)
     wavelet=kwargs.get('wavelet',signal.ricker)
     noisethresh=kwargs.get('noisethresh',0.4)
-    cloudthresh=kwargs.get('cloudthresh',(1.0,0.20))
+    cloudthresh=kwargs.get('cloudthresh',(1.0,0.40))
+    maxaeroalt=kwargs.get('maxaeroalt',10.0)
     CWTwidth=kwargs.get('CWTwidth',2)
     minwidth=kwargs.get('minwidth',4)
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
+    doPBL=kwargs.get('doPBL',True)
     PBLwavelet=kwargs.get('PBLwavelet',dog)
-    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    PBLCWTrange=kwargs.get('PBLCWTrange',[10])
+    PBLwidth=kwargs.get('PBLwidth', 10)
     savemasks=kwargs.get('savemasks',False)
     savemaskname=kwargs.get('savemaskname','testmasksall.h5')
     sigma0=kwargs.get('sigma0',None)
@@ -692,6 +711,7 @@ def findalllayers(**kwargs):
     icethresh=kwargs.get('icethresh',0.35)
     smokethresh=kwargs.get('smokethresh',0.10)
     dustthresh=kwargs.get('dustthresh',0.20)
+    
     
     if filename:
         mplin = mtools.MPL()
@@ -704,7 +724,7 @@ def findalllayers(**kwargs):
     
     layerkwargs = {'wavelet':wavelet,'noisethresh':noisethresh,
                    'cloudthresh':cloudthresh,'datatype':datatype,'CWTwidth':CWTwidth,
-                   'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,
+                   'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,'maxaeroalt':maxaeroalt,
                    'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
                    'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
     layers=find_layers(mplin,**layerkwargs)  
@@ -715,10 +735,13 @@ def findalllayers(**kwargs):
         layer_min=pan.Series(data=mplin.NRB[0].columns[-1],index=mplin.NRB[0].index)
         
     PBLkwargs = {'wavelet':PBLwavelet,'mol_min':mol_min,'layer_min':layer_min,
-                 'widths':PBLCWTrange,'layerwidth':minwidth,'bg_alt':bg_alt,
+                 'widths':PBLCWTrange,'layerwidth':PBLwidth,'bg_alt':bg_alt,
                  'datatype':datatype}
-    pbl=PBL_detect(mplin,**PBLkwargs)
-    
+    if doPBL:
+        pbl=PBL_detect(mplin,**PBLkwargs)
+    else:
+        pbl=pan.Series(data=0.0,index=mplin.NRB[0].index)
+        
     if savemasks:    
         store=pan.HDFStore(savemaskname)
         store['molecular']=molecular
@@ -795,7 +818,7 @@ def scenemaker(layerdict,**kwargs):
                    'Water Cloud':3,
                    'Mixed Cloud':4,
                    'Dust':5,
-                   'Mixed Dust & Smoke':6,
+                   'Polluted Dust':6,
                    'Smoke / Urban':7,
                    'Unidentified Aerosol':8,
                    'Insufficient Signal':9}
@@ -867,11 +890,14 @@ def scenemaker(layerdict,**kwargs):
         tempgroups=tempmask.groupby(level=0) 
         #assuming uniform altitude steps
         altstep=alts[1]-alts[0]
+        
         for g in tempgroups:
             if g[0]:
                 tempalts=g[1]
-                for key,alt in groupby(enumerate(tempalts), lambda (i,x):i-(x-tempalts.iloc[0])/altstep):                    
+#                tempcounts = [int(round((x-tempalts.iloc[0])/altstep)) for x in tempalts]
+                for key,alt in groupby(enumerate(tempalts), lambda (i,x):i-int(round((x-tempalts.iloc[0])/altstep))):                    
                     layeralt=map(operator.itemgetter(1),alt)
+#                    layeralt=[x*altstep+tempalts.iloc[0] for x in layercount]
                     if len(layeralt)==1:
                         continue
                     else:
@@ -1025,35 +1051,42 @@ def basiccorrection(mpl,**kwargs):
        alts=NRB.columns
        tempbackscatter=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
        tempextinction=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
+       templidarratio=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
        backout=[]
        extout=[]
+       lidarratout=[]
        for t in times:
            tempprof=NRB.ix[t]
-           if refalt is None:
-               refalt=tempprof.index.values[-1]
-               gtemp=pan.groupby(tempprof,pan.isnull(tempprof))
-               limalt=gtemp.groups[False][-1]
-               if limalt<refalt:
-                   refalt=limalt
-           if lrat:
-               templrat=pan.Series(data=lrat,index=alts)
+           if pan.isnull(tempprof).all():
+               continue
            else:
-               templrat=scene.loc['Lidar_Ratio',t]
-           coefkwargs={}
-#           coefkwargs['wave']=wave
-#           coefkwargs['refalt']=refalt
-           coefkwargs['method']=method
-#           coefkwargs['energy']=mpl.header['energy'].ix[t]
-#           coefkwargs['calrange']=calrange
-           tempbeta,tempsigma=itools.invert_profile(tempprof,templrat,**coefkwargs)
-           tempbackscatter.ix[t]=tempbeta
-           tempextinction.ix[t]=tempsigma
+               if refalt is None:
+                   refalt=tempprof.index.values[-1]
+                   gtemp=pan.groupby(tempprof,pan.isnull(tempprof))
+                   limalt=gtemp.groups[False][-1]
+                   if limalt<refalt:
+                       refalt=limalt
+               if lrat:
+                   templrat=pan.Series(data=lrat,index=alts)
+               else:
+                   templrat=scene.loc['Lidar_Ratio',t]
+               coefkwargs={}
+    #           coefkwargs['wave']=wave
+    #           coefkwargs['refalt']=refalt
+    #           coefkwargs['method']=method
+    #           coefkwargs['energy']=mpl.header['energy'].ix[t]
+    #           coefkwargs['calrange']=calrange
+               tempbeta,tempsigma,newlrat=itools.iterative_klett(tempprof,templrat,verbose=False)
+               tempbackscatter.ix[t]=tempbeta
+               tempextinction.ix[t]=tempsigma
+               templidarratio.ix[t]=newlrat
        backout.append(tempbackscatter)
        extout.append(tempextinction)
-   
+       lidarratout.append(templidarratio)
     mpl.backscatter=backout
     mpl.extinction=extout
-        
+    mpl.scenepanel[0]['Lidar_Ratio']=lidarratout[0]
+    
     return mpl
 
 def Tmatcher(lrat,profin,Tin,method,layerrange,wave,energy,refalt,calrange):    
@@ -1363,9 +1396,9 @@ def quickplot(df,**kwargs):
 
     
 if __name__=='__main__':
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
-    savefilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed'
-    plotfilepath='C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Figures'
+    os.chdir('E:\Smoke2015')
+    savefilepath='E:\Smoke2015\Processed'
+    plotfilepath='E:\Smoke2015\Figures'
     filepath=mtools.get_files('Select raw files',filetype=('.mpl','*.mpl'))[0]
     filename=os.path.split(filepath)[-1]
     savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])

@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 from matplotlib import cm, ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
+from copy import deepcopy
 
 import MPLtools as mtools
 import MPLprocesstools as mproc
@@ -201,8 +202,8 @@ def dataextractor(datatype='NRB',**kwargs):
     return dfout
 
 def scenefilter(dfin,panelin,**kwargs):
-    filtertypes=kwargs.get('filtertype',['aerosol'])
-    filtersubtypes=kwargs.get('filtersubtype',None)
+    filtertype=kwargs.get('filtertype',None)
+    filtersubtype=kwargs.get('filtersubtype',None)
     verbose = kwargs.get('verbose',False)
     inplace=kwargs.get('inplace',True)
     
@@ -211,7 +212,11 @@ def scenefilter(dfin,panelin,**kwargs):
     else:
         dfout=deepcopy(dfin)
         
-    if filtersubtypes is not None:
+    if filtertype is not None:
+        dftemp=panelin.loc['Type']
+        dffilt=dftemp==filtertype  
+        
+    if filtersubtype is not None:
         dftemp=panelin.loc['Sub-Type']
         dffilt=dftemp==filtersubtype
     else:

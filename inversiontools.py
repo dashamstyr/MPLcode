@@ -610,7 +610,8 @@ def klett(P_in,lrat_in,r_m=None,k=1,wave=532.0):
     """
 
     
-    S=np.log(P_in).fillna(method='pad',inplace=True)
+    P_trans = P_in+0.001-np.min(P_in.values)
+    S=np.log(P_trans)
     lrat = 1.0/lrat_in  #Klett definition of lidar ratio is backscatter/extintion not the other way round
 
     altitudes = S.index.values
@@ -721,7 +722,7 @@ def klett2(P_in,lrat_in,**kwargs):
             S_int=0
             oldalt = alt      
         else:
-            delta_r=oldalt-alt  
+            delta_r=oldalt-alt 
             if oldalt==r_m:
                 #in this case, use simple reimann integration
                 beta_int1 += (2.0/lrat_R)*(beta_R.ix[alt])*delta_r
@@ -746,6 +747,64 @@ def klett2(P_in,lrat_in,**kwargs):
             old_delta_Sprime=delta_Sprime
     return beta,sigma
 
+def iterative_klett(P_in,lrat_p,**kwargs):
+    wave=kwargs.get('wave',532.0)
+    k=kwargs.get('k',1.0)
+    r_m=kwargs.get('r_m',None)
+    maxiter=kwargs.get('maxiter',20)
+    deltathresh=kwargs.get('deltathresh',0.1)
+    lrat_min=kwargs.get('lrat_min',8.0*np.pi/3.0)
+    lrat_max=kwargs.get('lrat_max',100.0)
+    verbose=kwargs.get('verbose',False)
+    
+    alts=P_in.index
+    Pmol=molprof(z=alts,wave=wave)
+    beta_m=Pmol.beta_R
+    lrat_m=8.0*np.pi/3.0
+    
+    lrat_old=lrat_p.replace(0.0,lrat_m,inplace=False)
+    back_old,ext_old=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
+    n=0
+    while True:     
+        n+=1
+        
+        if verbose:
+            print "Iteration #{0}".format(n)
+        lrat_new=(lrat_m*beta_m+lrat_p*(back_old-beta_m)).div(back_old)
+        back_new,ext_new=klett(P_in=P_in,lrat_in=lrat_new,r_m=r_m,k=k,wave=wave)
+        
+        delta_ext=abs(100.0*(ext_new-ext_old).div(ext_old))
+        for i in lrat_new.index:
+            if lrat_new.ix[i]<lrat_min:
+                lrat_new.ix[i]=lrat_min
+            elif lrat_new.ix[i]>lrat_max:
+                lrat_new.ix[i]=lrat_max
+            elif lrat_old.ix[i]==lrat_m:
+                lrat_new.ix[i]=lrat_m
+        back_old=back_new
+        ext_old=ext_new
+        
+        if n>=maxiter:
+            if verbose:
+                print 'Failed to converge after {0} Iterations'.format(n)
+            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
+            lrat_out=lrat_old
+            break
+        if delta_ext.max() <= deltathresh:
+            lrat_out=lrat_new
+            for i in lrat_new.index:
+                if lrat_new.ix[i]<lrat_min:
+                    lrat_out.ix[i]=lrat_min
+                elif lrat_new.ix[i]>lrat_max:
+                    lrat_out.ix[i]=lrat_max
+                elif lrat_old.ix[i]==lrat_m:
+                    lrat_out.ix[i]=lrat_m
+            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_out,r_m=r_m,k=k,wave=wave)
+                    
+            break
+    
+    return back_out,ext_out,lrat_out
+
 def invert_profile(profin,lratin,**kwargs):
     method=kwargs.get('method','klett2')
     refalt=kwargs.get('refalt',profin.index[-1])
@@ -755,9 +814,11 @@ def invert_profile(profin,lratin,**kwargs):
     mollayers=lratin[lratin==0.0]
     moledges=[]
     altstep=lratin.index[1]-lratin.index[0]
+#    molcount=[int(round((x-mollayers.index[0])/altstep)) for x in mollayers.index]
     
-    for key,alt in groupby(enumerate(mollayers.index),lambda (i,x):i-(x-mollayers.index[0])/altstep):
+    for key,alt in groupby(enumerate(mollayers.index),lambda (i,x):i-int(round((x-mollayers.index[0])/altstep))):
         temprange=map(operator.itemgetter(1),alt)
+#        tempalts=[x*altstep+mollayers.index[0] for x in temprange]
         moledges.append((temprange[0],temprange[-1]))
     
     alt=profin.index[-1]
@@ -790,12 +851,103 @@ def invert_profile(profin,lratin,**kwargs):
                 backscatter.ix[layeralts]=tempback.values
                 extinction.ix[layeralts]=tempext.values
                 
-            if alt==profin.index[0]:
+            if alt-profin.index[0]<=altstep:
                 break
         
         return backscatter,extinction
-            
 
+def kovalev(P_in,lrat_in,**kwargs):
+    wave=kwargs.get('wave',532.0)
+    threshval=kwargs.get('threshval',0.10)
+    iterthresh=kwargs.get('iterthresh',20)
+    divergethresh=kwargs.get('divergethresh',5)
+    verbose=kwargs.get('verbose',False)
+    
+    lrat_m=8.0*np.pi/3.0
+    alts=P_in.index
+    tempmol = molprof(z=alts,wave=wave)
+    sigma_m = tempmol['sigma_R']
+    
+    n=0
+    divergeflag=0
+    P_old=P_in
+    P_vals=pan.DataFrame(index=alts)
+    delta_vals=pan.DataFrame(index=alts)
+    sigma_vals=pan.DataFrame(index=alts)
+    while True:
+        #step 1: calculate I_r = integral of P_in from r_0 - r
+        oldalt=alts[0]
+        I_r = pan.Series(index=alts)
+        I_r.ix[oldalt]=0.0
+        for newalt in P_old.index[1:]:
+            I_r.ix[newalt]=I_r.ix[oldalt]+0.5*(P_old.ix[newalt]+P_old.ix[oldalt])*(newalt-oldalt)                        
+            oldalt=newalt
+        
+        I_max=I_r.iloc[-1]    
+        #step 2: assume R_b=0 and use eqn. 22 to find gamma_r    
+        gamma_r = 1.0-(2.0*I_max/(P_old.div(sigma_m)+2.0*I_r))
+    
+        #step 3: calculcate gamma_min from gamma_r and use eqn. 23 to calculate sigma_p
+        
+        gamma_min = gamma_r.min()
+        gamma_idxmin = gamma_r.idxmin() 
+        
+        denom=(I_max/(1-gamma_min))-I_r
+        sigma_p = 0.5*P_old.div(denom) - sigma_m
+        
+        #step 4: calculate Y_r using equation 14
+        
+        Y_r_num = sigma_m+sigma_p
+        Y_r_denom = sigma_m + lrat_in.div(lrat_m)*sigma_p
+        
+        Y_r = Y_r_num.div(Y_r_denom)
+        #step 5: nmormalize P_in by Y_r using eqn. 15
+        
+        P_new = P_in*Y_r
+        #step 6: recalculate fom step 1 until no difrferences between steps        
+        
+        delta_P = abs(100.0*(P_new-P_old).div(P_old))  #delta in percentage units
+        
+        
+        if delta_P.max() <= threshval:
+            extinction=sigma_p+sigma_m
+            backscatter=extinction.div(lrat_in)
+            flag=0
+            break
+        
+        if n>=1 and delta_P.mean()>= delta_P_old.mean():
+            divergeflag+=1
+        
+            if divergeflag>=divergethresh:
+                if verbose:
+                    print "Kovalev diverging error"
+                extinction=pan.Series(data=np.nan,index=P_in.index)
+                backscatter=pan.Series(data=np.nan,index=P_in.index)
+                flag=2
+                break
+            
+        P_old=P_new
+        delta_P_old=delta_P
+        n+=1  
+        
+        P_vals[n]=P_old
+        delta_vals[n]=delta_P_old
+        sigma_vals[n]=sigma_p
+        
+        if n>=iterthresh:
+            if verbose:
+                print 'Failed to converge after {0} iterations'.format(n)
+            extinction=sigma_p+sigma_m
+            backscatter=extinction.div(lrat_in)
+            flag=1
+            break
+
+    P_vals.plot()
+    delta_vals.plot()
+    sigma_vals.plot()    
+    return backscatter,extinction,flag
+    
+    
 def lrat_tester_full(P_0,**kwargs):
     wave=kwargs.get('wave',532.0)
     E0=kwargs.get('E0',1.0)
@@ -955,11 +1107,22 @@ if __name__ == '__main__':
     lrat_list=np.arange(15.0,80.0,5.0)
     lrat_testrange=[0.5]
     
-    beta_layer=pan.Series(data=[1e-5,1e-5], index=[12500,14500])
-    layer1={'beta_p':beta_layer,'lrat':15}
-    P_0=profgen(z,layers=[layer1],background=background,noise=noise)
-
-    testpan=lrat_tester_full(P_0,lrat_klett=[1.0])
+    beta_layer1=pan.Series(data=1e-3, index=[0.500,1.500])
+    beta_layer2=pan.Series(data=1e-4, index=[12.500,14.500])
+    layer1={'beta_p':beta_layer1,'lrat':35}
+    layer2={'beta_p':beta_layer2,'lrat':65}
+    P_0=profgen(z,layers=[layer1,layer2],background=background,noise=noise)
+    
+    P_in=P_0.rsq 
+    beta_m=P_0.beta_R
+    lrat_m=8.0*np.pi/3.0
+    lrat_p=P_0.sigma_p.div(P_0.beta_p).fillna(0.0)
+    lrat0=P_0.sigma_p.div(P_0.beta_p).fillna(lrat_m)
+    
+#    back,ext,flag=kovalev(P_in,lrat_in,verbose=True)
+    back,ext=iterative_klett(P_in,lrat_p,verbose=True)
+    
+#    testpan=lrat_tester_full(P_0,lrat_klett=[1.0])
                 
 #    beta_fern = fernald(P_1,30,wave,1.0)
 #    sigma_fern=beta_fern*lrat_p1

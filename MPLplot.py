@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+#from __future__ import absolute_import
 import os,sys,site
 home=os.environ['homepath']
 site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
@@ -16,6 +16,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 #from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
+import datetime
 
 def custom_cmap(maptype,numvals,overcolor,undercolor):
     if maptype=="customjet":
@@ -319,7 +320,7 @@ def doubleplot(datafile,**kwargs):
     else:
         MPLevent = deepcopy(datafile)
         
-    if len(altrange)>0:
+    if altrange is not None:
         MPLevent.alt_resample(altrange)    
     
     if any([starttime,endtime,timestep]):
@@ -466,7 +467,7 @@ def colormask_plot(mplin,**kwargs):
                                        'Water Cloud':3,
                                        'Mixed Cloud':4,
                                        'Dust':5,
-                                       'Mixed Dust & Smoke':6,
+                                       'Polluted Dust':6,
                                        'Smoke/Urban':7,
                                        'Unidentified Aerosol':8,
                                        'Insufficient Signal':9})
@@ -476,9 +477,9 @@ def colormask_plot(mplin,**kwargs):
     Ice=(255.0/255.0,255.0/255.0,255.0/255.0)
     Water=(0.0/255.0,0.0/255.0,205.0/255.0)
     Mixed=(186.0/255.0,85.0/255.0,211.0/255.0)
-    Dust=(184.0/255.0,134.0/255.0,11.0/255.0)
-    Dust_Smoke=(75.0/255.0,75.0/255.0,100.0/255.0)
-    Smoke_Urban=(220.0/255.0,20.0/255.0,60.0/255.0)
+    Dust=(255.0/255.0,193.0/255.0,37.0/255.0)
+    Dust_Smoke=(199.0/255.0,97.0/255.0,20.0/255.0)
+    Smoke_Urban=(75.0/255.0,75.0/255.0,100.0/255.0)
     Unidentified=(192.0/255.0,192.0/255.0,192.0/255.0)
     Insufficient=(0.0/255.0,0.0/255.0,0.0/255.0)
                                        
@@ -502,7 +503,7 @@ def colormask_plot(mplin,**kwargs):
     alts=maskin.columns
     
     numfigs=len(plt.get_fignums())
-    fig=plt.figure(numfigs+1,figsize=(10,5),dpi=100)
+    fig=plt.figure(numfigs+1,figsize=(30,5),dpi=100)
     
 #    ax1=plt.subplot2grid((1,9),(0,0),rowspan=1,colspan=7)
 #    cax1=plt.subplot2grid((1,9),(0,7),rowspan=1,colspan=1) 
@@ -538,55 +539,126 @@ def colormask_plot(mplin,**kwargs):
     if showplot:
         fig.canvas.draw()
 
-
+def plotall(mplfile,**kwargs):
+    time_resample=kwargs.get('time_resample',False)
+    alt_resample=kwargs.get('alt_resample',False)
+    altrange = kwargs.get('altrange',np.arange(150,15000,30))        
+    timestep = kwargs.get('timestep','60S')
+    starttime = kwargs.get('starttime',None)
+    endtime = kwargs.get('endtime',None)
+    doplot=kwargs.get('doplot',True)
+    docorplot=kwargs.get('docorplot',True)
+    dolayerplot=kwargs.get('dolayerplot',True)
+    saveplots=kwargs.get('saveplots',True)
+    showplots=kwargs.get('showplots',True)
+    plotsavepath = kwargs.get('plotsavepath','..\Figures')
+    NRBmask=kwargs.get('NRBmask',True)
+    NRBmasktype = kwargs.get('NRBmasktype','profile')
+    NRBthresh=kwargs.get('NRBthresh',3.0)
+    NRBmin=kwargs.get('NRBmin',0.5)
+    NRBminalt=kwargs.get('NRBminalt',0.150)
+    NRBnumprofs=kwargs.get('NRBnumprofs',1)
+    NRBwinsize=kwargs.get('NRBwinsize',3)
+    NRBinplace=kwargs.get('NRBinplace',False)
+    NRB_limits = kwargs.get('NRB_limits',(0.0,1.0,0.2))  
+    depol_limits = kwargs.get('depol_limits',(0.0,0.5,0.1))
+    back_limits = kwargs.get('back_limits',(0.0,1e-7,2e-8))
+    ext_limits = kwargs.get('ext_limits',(0.0,2e-6,4e-7))
+    hours = kwargs.get('hours',['06','12','18']) 
+    fsize = kwargs.get('fsize',18) #baseline font size
+    SNRmask = kwargs.get('SNRmask',False)
+    SNRthresh=kwargs.get('SNRthresh',1.0)
+    SNRtype=kwargs.get('SNRtype','NRB')
+    interpolate=kwargs.get('interpolate','None') #other methods include none, bilinear, gaussian and hermite
+    #starttime and endtime are defined later  
     
-if __name__=='__main__':       
-    altrange = np.arange(0.150,15.030,0.030)
-    starttime = []
-    endtime = []
-    timestep = '120S'
-    hours = ['03','06','09','12','15','18','21']
-    bottomplot_limits=(0.0,0.5,0.1)
-    topplot_limits=(0.0,1.0,0.2)
+    MPLdat_event=mtools.MPL()
+    MPLdat_event.fromHDF(mplfile)
+    
+    if time_resample:
+        MPLdat_event.time_resample(timestep,starttime=starttime,endtime=endtime)
+    
+    if alt_resample:
+        MPLdat_event.alt_resample(altrange)
+        
+    if NRBmask:
+        NRBmaskkwargs={'NRBmasktype':NRBmasktype,'NRBthreshold':NRBthresh,'NRBmin':NRBmin,
+                       'minalt':NRBminalt,'numprofs':NRBnumprofs,'winsize':NRBwinsize,
+                       'inplace':NRBinplace}
+        MPLdat_event=mtools.NRB_mask_all(MPLdat_event,**NRBmaskkwargs)
 
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files\Processed')
+
+    if doplot:
+        plotfilename = '{0}.png'.format(mplfile.split('.')[0])
+        plotkwargs={'topplot_limits':NRB_limits,'bottomplot_limits':depol_limits,
+                    'hours':hours,'fsize':fsize,'savefilename':plotfilename,'savefilepath':plotsavepath,
+                    'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,'interpolate':interpolate,
+                    'showplot':showplots,'saveplot':saveplots}
+        
+        doubleplot(MPLdat_event,plotfilename=plotfilename,**plotkwargs)
+    
+    if docorplot:
+        coefplotfilename = '{0}-coefficients.png'.format(mplfile.split('.')[0])
+        coefplotkwargs={'toptype':'backscatter','bottomtype':'extinction',
+                        'topplot_limits':back_limits,'bottomplot_limits':ext_limits,
+                        'hours':hours,'fsize':fsize,'savefilename':coefplotfilename,
+                        'savefilepath':plotsavepath,#'SNRmask':SNRmask,'SNRthresh':SNRthresh,
+                        'interpolate':interpolate,'SNRtype':SNRtype,'showplot':showplots,'saveplot':saveplots}
+            
+        doubleplot(MPLdat_event,plotfilename=coefplotfilename,**coefplotkwargs)
+
+    if dolayerplot:
+        layerplotfilename = '{0}-layers.png'.format(mplfile.split('.')[0])
+        layerplotkwargs={'hours':hours,'fontsize':fsize,'plotfilename':layerplotfilename,
+                         #'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,
+                         'plotfilepath':plotsavepath,'showplot':showplots,'saveplot':saveplots}        
+        colormask_plot(MPLdat_event,**layerplotkwargs)
+    
+if __name__=='__main__': 
+    alt_resample=True      
+    altrange=np.arange(0.150,4.030,0.030)
+    time_resample=False
+    timestep='600S'
+    starttime=datetime.datetime(2015,07,06,00)
+    endtime=datetime.datetime(2015,07,06,18)
+    plotsavepath='..\Figures'
+    
+    NRBmask=False
+    NRBthresh=3.0
+    NRBmin=0.5
+    NRBminalt=0.150
+    NRBnumprofs=1
+    SNRmask=True
+    SNRthresh=0.5
+    SNRtype='NRB'
+    saveplots=True
+    showplots=True
+    dolayerplot=True
+    docorplot=True
+#    hours=['02','04','06','08','10','12','14','168','18','20','22']
+    hours=['06','06','09','12','15','18','21']
+    NRB_limits=(0.0,0.5,0.1) 
+    depol_limits=(0.0,0.5,0.1)
+    back_limits=(0.0,1e-3,2e-4)
+    ext_limits=(0.0,2e-2,4e-3)
+    interpolate='none'
+
+    os.chdir('E:\Smoke2015\Processed')
 
     filepath = mtools.get_files('Select Processed MPL file(s)', filetype = ('.h5', '*.h5'))
     
-    if len(filepath)==1:
-        [d_path,d_filename] = os.path.split(filepath[0])    
-        savefilename = '{0}.png'.format(d_filename.split('.')[0])
-    else:
-        [d_path,startfile] = os.path.split(filepath[0])
-        [d_path,endfile] = os.path.split(filepath[-1])
-        savefilename = '{0}-{1}.png'.format(startfile.split('.')[0],endfile.split('.')[0])          
-    savepath = os.path.join(os.path.split(d_path)[0],'Figures')
+    kwargs={'alt_resample':alt_resample,'altrange':altrange,
+            'time_resample':time_resample,'timestep':timestep,'starttime':starttime,'endtime':endtime,
+            'SNRmask':SNRmask,'SNRthresh':SNRthresh,'SNRtype':SNRtype,
+            'saveplots':saveplots,'showplots':showplots,
+            'dolayerplot':dolayerplot,'docorplot':docorplot,
+            'NRBmask':NRBmask,'NRBthresh':NRBthresh,'NRBmin':NRBmin,
+            'NRBminalt':NRBminalt,'NRBnumprofs':NRBnumprofs,
+            'NRB_limits':NRB_limits,'depol_limits':depol_limits,
+            'back_limits':back_limits,'ext_limits':ext_limits,
+            'interpolate':interpolate,'hours':hours}
 
-    for f in filepath:  
-        MPLtemp = mtools.MPL()
-        MPLtemp.fromHDF(f)        
-        MPLtemp.alt_resample(altrange)
-        
-        try:
-            MPLevent.append(MPLtemp)
-        except NameError:
-            MPLevent = MPLtemp
-   
-    MPLevent.header.sort_index(inplace=True)
-    
-    for n in range(MPLevent.header['numchans'][0]):
-        MPLevent.data[n].sort_index(inplace=True)
-    
-    MPLevent.time_resample(timestep,starttime,endtime)  
-    MPLevent.calc_all()
-    MPLevent=mtools.NRB_mask_all(MPLevent) 
-    
-    kwargs = {'saveplot':True,'showplot':True,'verbose':True,
-                'savefilepath':savepath,'savefilename':savefilename,
-                'hours':hours,'bottomplot_limits':bottomplot_limits,'topplot_limits':topplot_limits,'SNRmask':True,
-                'colormap':'customjet','orientation':'vertical','interpolation':none}
-    
-    doubleplot(MPLevent,**kwargs)
+    plotall(filepath[0],**kwargs)
     
 
     
