@@ -6,9 +6,6 @@ Created on Tue May 19 12:50:39 2015
 """
 import os,sys,glob
 
-codelib='C:\\Users\\dashamstyr\\Dropbox\\Python_Scripts\\GIT_Repos\\MPLcode'
-sys.path.append(codelib)
-
 import numpy as np
 import MPLtools as mtools
 import MPLprocesstools as mproc

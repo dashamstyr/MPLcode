@@ -1,7 +1,7 @@
 
 import os,sys,site
-home=os.environ['homepath']
-site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
+#home=os.environ['homepath']
+#site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
 
 import numpy as np
 from scipy.stats import cumfreq
@@ -13,6 +13,7 @@ from matplotlib import cm, ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pickle
 from copy import deepcopy
+from scipy import signal
 
 import MPLtools as mtools
 import MPLprocesstools as mproc
@@ -27,9 +28,10 @@ def progress(datanum,tot_loops):
     """   
     the_frac=np.int(np.float(datanum)/tot_loops*100.0)
     sys.stdout.write("\rpercent complete: {0}%".format(the_frac))
+    sys.stdout.write("{0} files out of {1}".format(datanum,tot_loops))
     sys.stdout.flush()
 
-def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
+def filegetter(filedir=None,savedir=None,filetype='.mpl',**kwargs):
     """
     takes a top-level directory and finds all relevant files 
     returns a list of filenames to iterate through
@@ -44,22 +46,67 @@ def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
     timestep = kwargs.get('timestep',None)
     verbose = kwargs.get('verbose',False)
     SNRmask=kwargs.get('SNRmask',True)
-    SNRthreshold=kwargs.get('SNRthreshold',1)
+    SNRthreshold=kwargs.get('SNRthreshold',1.0)
     bg_alt=kwargs.get('bg_alt',None)
-    datatype=kwargs.get('datatype','data')
+    datatype=kwargs.get('datatype','NRB')
     NRBmask=kwargs.get('NRBmask',True)
-    NRBthreshold=kwargs.get('NRBthreshold',3)
+    NRBthreshold=kwargs.get('NRBthreshold',5.0)
     NRBmin=kwargs.get('NRBmin',0.5)
     minalt=kwargs.get('minalt',0.150)
+    dolayers=kwargs.get('dolayers',True)
+    docorrection=kwargs.get('docorrection',False)
     winsize=kwargs.get('winsize',5)
-       
+    topickle=kwargs.get('topickle',True)
+    picklefilename=kwargs.get('picklefilename','test.p')
+    
+    #findalllayers kwargs
+    molthresh=kwargs.get('molthresh',1.0)
+    layernoisethresh=kwargs.get('layernoisethresh',1.0)      
+    bg_alt=kwargs.get('bg_alt',None)
+    datatype=kwargs.get('datatype','NRB')
+    winsize=kwargs.get('winsize',5)
+    wavelet=kwargs.get('wavelet',signal.ricker)
+    noisethresh=kwargs.get('noisethresh',0.4)
+    cloudthresh=kwargs.get('cloudthresh',(1.0,0.20))
+    CWTwidth=kwargs.get('CWTwidth',2)
+    minwidth=kwargs.get('minwidth',4)
+    layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
+    PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
+    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(5,15))
+    PBLwidth=kwargs.get('PBLwidth',7)
+    sigma0=kwargs.get('sigma0',0.1)
+    depolsigma0=kwargs.get('depolsigma0',0.05)
+    waterthresh=kwargs.get('waterthresh',0.10)
+    icethresh=kwargs.get('icethresh',0.35)
+    smokethresh=kwargs.get('smokethresh',0.05)
+    dustthresh=kwargs.get('dustthresh',0.20)
+    maxaeroalt=kwargs.get('maxaeroalt',10.0)
+    
+    #correction kwargs
+    refalt=kwargs.get('refalt',None)
+    calrange=kwargs.get('calrange',None)
+    method=kwargs.get('method','klett2')
+    lrat=kwargs.get('lrat',None)
+    mode=kwargs.get('mode','copol')
+    
+    doprogress=kwargs.get('doproc',True)
+    recalc=kwargs.get('recalc',False)
+    
     if filedir is None:
         filedir = mtools.set_dir('Sepect top-level folder to search')
     
+    if savedir is None:
+        savedir = mtools.set_dir('Sepect top-level folder to save to')
+        
     outlist=[]
+    picklelist=[]
+    n=0
     for root, folder, filelist in os.walk(filedir):
         for filename in filelist:
             if filename.endswith(filetype):
+                if doprogress:
+                    progress(n,len(filelist))
+                    n+=1
                 tempMPL=mtools.MPL()
                 if filetype=='.mpl':   
                     if starttime<=mfile.MPLtodatetime(filename)<=endtime:
@@ -67,58 +114,76 @@ def filegetter(filedir=None,filetype='.mpl',daterange=None,**kwargs):
                         if fileinfo.st_size==0:
                             continue
                         else:
-                            tempMPL.fromMPL(os.path.join(root,filename))
+                            savefilename='{0}_proc.h5'.format(filename.split('.')[0])
+                            if recalc:
+                                tempMPL.fromMPL(os.path.join(root,filename))
+                                procflag=False
+                            elif savefilename in os.listdir(savedir):
+                                procflag=True
+                                tempMPL.fromHDF(os.path.join(savedir,savefilename))
+                            else:
+                                tempMPL.fromMPL(os.path.join(root,filename))
+                                procflag=False
                         if verbose:
                             print filename
                     else:
                         continue
-                    
+                elif filetype=='.h5':
+                    procflag=True
+                    if starttime<=mfile.H5todatetime(filename)<=endtime:
+                        fileinfo=os.stat(os.path.join(root,filename))
+                        if fileinfo.st_size==0:
+                            continue
+                        else:
+                            tempMPL.fromHDF(os.path.join(root,filename))
+                        if verbose:
+                            print filename
+                    else:
+                        continue 
+                if procflag and not recalc:
+                    if topickle:
+                        picklelist.append(tempMPL)
+                    outlist.append(os.path.join(savedir,savefilename))
+                        
+                else:
                     if timestep:
                         tempMPL = tempMPL.time_resample(timestep=timestep,verbose=verbose)
                     if altitudes.any():
                         tempMPL = tempMPL.alt_resample(altitudes,verbose=verbose)
                 
                     tempMPL.calc_all()
+                    if dolayers:
+                        layerkwargs={'timestep':timestep,'bg_alt':bg_alt,'datatype':datatype,
+                                     'molthresh':molthresh,'winsize':winsize,'layernoisethresh':layernoisethresh,
+                                     'wavelet':wavelet,'noisethresh':noisethresh,'cloudthresh':cloudthresh,
+                                     'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
+                                     'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'PBLwidth':PBLwidth,'sigma0':sigma0,
+                                     'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
+                                     'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0,'maxaeroalt':maxaeroalt}
+                        layerdict=mproc.findalllayers(mplin=tempMPL,**layerkwargs)
+                        tempMPL=mproc.scenemaker(layerdict)
+                    
+                    if docorrection:
+                        corkwargs={'refalt':refalt,'calrange':calrange,'method':method,'lrat':lrat,'mode':mode}
+                        
+                        tempMPL=mproc.basiccorrection(tempMPL,**corkwargs)
+                        
                     if NRBmask:
-                        tempMPL=mproc.NRB_mask_all(tempMPL,NRBthreshold=NRBthreshold,
+                        tempMPL=mtools.NRB_mask_all(tempMPL,NRBthreshold=NRBthreshold,
                                                    NRBmin=NRBmin,minalt=minalt,
                                                    winsize=winsize)
                     if SNRmask:
-                        tempMPL=mproc.SNR_mask_all(tempMPL,SNRthreshold=SNRthreshold,
+                        tempMPL=mtools.SNR_mask_all(tempMPL,SNRthreshold=SNRthreshold,
                                                    bg_alt=bg_alt,datatype=datatype)                            
-                    outlist.append(tempMPL)
-                if filetype=='.h5':
-                    if daterange: 
-                        H5daterange=mfile.H5todatetime(filename)
-                        [startdate,enddate]=H5daterange
-                        if daterange[0]<=enddate and daterange[1]>=startdate:
-                            tempMPL.fromHDF(os.path.join(root,filename))
-                            temptimes = tempMPL.data[0].index.values
-                            tempstart = temptimes[0]
-                            tempend = temptimes[-1]
-                            
-                            if tempstart<=startdate<=tempend:
-                                newstart=starttime
-                            else:
-                                newstart=tempstart
-                            
-                            if tempstart<=enddate<=tempend:
-                                newend = endtime
-                            else:
-                                newend = tempend
-                         
-                            tempMPL = tempMPL.time_resample(starttime=newstart,endtime=newend,timestep=timestep,verbose=verbose)
-                        else:
-                            continue                                    
-                    else:
-                        tempMPL.fromHDF(os.path.join(root,filename))
-                
-                        if altitudes.any():
-                            tempMPL = tempMPL.alt_resample(altitudes,verbose=verbose)
-                    
-                        tempMPL.calc_all()
-                        outlist.append(tempMPL)
-                
+                        
+                    tempMPL.save_to_HDF(os.path.join(savedir,savefilename))
+                    if topickle:
+                        picklelist.append(tempMPL)
+                    outlist.append(os.path.join(savedir,savefilename))
+            
+    if topickle:
+        pickle.dump(picklelist,open(picklefilename,'wb'))
+    
     return outlist
         
 def dataextractor(datatype='NRB',**kwargs):
@@ -139,60 +204,59 @@ def dataextractor(datatype='NRB',**kwargs):
     MPLlist=kwargs.get('MPLlist',None)
     toHDF=kwargs.get('toHDF',False)
     HDFfile=kwargs.get('HDFfile','test.h5')
-    
+    doprogress=kwargs.get('doprogress',True)
     dflist=[]
-    if loadfiletype=='pickle':
+
+    if loadfiletype=='HDF5':
         try:
-            with open(loadfilename,'rb') as pf:
-                MPLlist=pickle.load(pf)
-        except IOError:
-            print "Could not find file named {0}".format(loadfilename)
+            mpltemp=mtools.MPL()
+            mpltemp.fromHDF(loadfilename)
+            if datatype=='Raw':
+                dfout=mpltemp.data[0]
+            elif datatype=='NRB':
+                dfout=mpltemp.NRB[0]
+            elif datatype=='Depolrat':
+                dfout=mpltemp.depolrat[0]
+            elif datatype=='SNR':
+                dfout=mpltemp.SNR['NRB'][0]
+            elif datatype=='DepolSNR':
+                dfout=mpltemp.SNR['depolrat'][0]
+            elif datatype=='Type':
+                dfout=mpltemp.scenepanel[0]['Type']
+            elif datatype=='Subtype':
+                dfout=mpltemp.scenepanel[0]['Sub-Type']
             
-        for MPLfile in MPLlist:        
-            if datatype=='Raw':
-                tempdf=MPLfile.data[0]
-            elif datatype=='NRB':
-                tempdf=MPLfile.NRB[0]
-            elif datatype=='Depolrat':
-                tempdf=MPLfile.depolrat[0]
-            elif datatype=='SNR':
-                tempdf=MPLfile.SNR['NRB'][0]
-            elif datatype=='DepolSNR':
-                tempdf=MPLfile.SNR['depolrat'][0]
-            elif datatype=='LayerType':
-                tempdf=MPLfile.scenepanel[0]['Type']
-            elif datatype=='LayerSubtype':
-                tempdf=MPLfile.scenepanel[0]['Sub-Type']
-            dflist.append(tempdf)
-        
-        dfout=pan.concat(dflist)
-    elif loadfiletype=='HDF':
-        try:
-            dfout=pan.read_hdf(loadfilename,datatype)
         except IOError:
             print "Could not find file named {0}".format(loadfilename)
-    elif loadfiletype=='list':
-        for MPLfile in MPLlist:        
-            if datatype=='Raw':
-                tempdf=MPLfile.data[0]
-            elif datatype=='NRB':
-                tempdf=MPLfile.NRB[0]
-            elif datatype=='Depolrat':
-                tempdf=MPLfile.depolrat[0]
-            elif datatype=='SNR':
-                tempdf=MPLfile.SNR['NRB'][0]
-            elif datatype=='DepolSNR':
-                tempdf=MPLfile.SNR['depolrat'][0]
-            elif datatype=='LayerType':
-                tempdf=MPLfile.scenepanel[0]['Type']
-            elif datatype=='LayerSubtype':
-                tempdf=MPLfile.scenepanel[0]['Sub-Type']
-            dflist.append(tempdf)
-        
-        dfout=pan.concat(dflist)
     else:
-        print 'Input file type {0} not recognized!'.format(loadfiletype)
-        return dflist
+        if loadfiletype=='pickle':
+            try:
+                with open(loadfilename,'rb') as pf:
+                    MPLlist=pickle.load(pf)
+            except IOError:
+                print "Could not find file named {0}".format(loadfilename)
+        if MPLlist is not None:
+            for MPLfile in MPLlist:        
+                if datatype=='Raw':
+                    tempdf=MPLfile.data[0]
+                elif datatype=='NRB':
+                    tempdf=MPLfile.NRB[0]
+                elif datatype=='Depolrat':
+                    tempdf=MPLfile.depolrat[0]
+                elif datatype=='SNR':
+                    tempdf=MPLfile.SNR['NRB'][0]
+                elif datatype=='DepolSNR':
+                    tempdf=MPLfile.SNR['depolrat'][0]
+                elif datatype=='Type':
+                    tempdf=MPLfile.scenepanel[0]['Type']
+                elif datatype=='Subtype':
+                    tempdf=MPLfile.scenepanel[0]['Sub-Type']
+                dflist.append(tempdf)
+            
+            dfout=pan.concat(dflist)
+        else:
+            print 'Input file type {0} not recognized!'.format(loadfiletype)
+            return dflist
             
     if toHDF:
         store=pan.HDFStore(HDFfile)
@@ -201,49 +265,66 @@ def dataextractor(datatype='NRB',**kwargs):
     
     return dfout
 
-def scenefilter(dfin,panelin,**kwargs):
-    filtertype=kwargs.get('filtertype',None)
-    filtersubtype=kwargs.get('filtersubtype',None)
-    verbose = kwargs.get('verbose',False)
-    inplace=kwargs.get('inplace',True)
+def scenefilter(dfin,dffilt,**kwargs):
+    filterterms=kwargs.get('filterterms',None)
+    inplace=kwargs.get('inplace',False)
     
     if inplace:
         dfout=dfin
     else:
         dfout=deepcopy(dfin)
         
-    if filtertype is not None:
-        dftemp=panelin.loc['Type']
-        dffilt=dftemp==filtertype  
+    dftemp=dffilt.isin(filterterms)
         
-    if filtersubtype is not None:
-        dftemp=panelin.loc['Sub-Type']
-        dffilt=dftemp==filtersubtype
-    else:
-        dftemp=panelin.loc['Type']
-        dffilt=dftemp==filtertype
-    
-    dffilt.replace(False,np.nan,inplace=True)
-    dfout=dfout*dffilt
+    dftemp.replace(False,np.nan,inplace=True)
+    dfout=dfout*dftemp
         
     return dfout
-    
 
-def histplot1D(df,**kwargs):
+def SNRfilter(dfin,dfSNR,thresh=1.0,inplace=True):
+    if inplace:
+        dfout=dfin
+    else:
+        dfout=deepcopy(dfin)
     
-    binrange=kwargs.get('binrange',[min(df.min()),max(df.max())])
+    dftemp=dfSNR[dfSNR>thresh]
+    dftemp.replace(False,np.nan,inplace=True)
+    dfout=dfout*dftemp
+        
+    return dfout
+
+def forceAspect(ax,aspect=1):
+    im = ax.get_images()
+    extent =  im[0].get_extent()
+    ax.set_aspect(abs((extent[1]-extent[0])/(extent[3]-extent[2]))/aspect)
+    
+def histplot1D(datain,**kwargs):
+    
+    datatype=kwargs.get('datatype','df')
+    
+    if datatype is 'df':
+        histvals=datain.values
+        binrange=kwargs.get('binrange',[min(datain.min()),max(datain.max())])
+    elif datatype is 'histdict':
+        counts=datain['counts']
+        edges=datain['edges']
+        centers=datain['centers']
+        step=np.diff(edges)
+        
     numbins=kwargs.get('numbins',100)  
     missinglowval=kwargs.get('missinghighval',-99999)
     missinghighval=kwargs.get('missinglowval',99999)
     normalize=kwargs.get('normalize',True)
     cumulative=kwargs.get('cumulative',False)
     
-    doplot=kwargs.get('doplot',True)    
+    doplot=kwargs.get('doplot',True)  
+    showplot=kwargs.get('showplot',False)
     saveplot=kwargs.get('saveplot',False)
     plotfilename=kwargs.get('plotfilename','1Dhist_test.png')
     fsize=kwargs.get('fsize',32) #baseline font size
     ar=kwargs.get('ar',1.0)  #aspect ratio
-    figheight=kwargs.get('figheight',12) #inches       
+    figheight=kwargs.get('figheight',12) #inches 
+    dpi=kwargs.get('dpi',100)      
     fignum=kwargs.get('fignum',0)
     xlog=kwargs.get('xlog',False)
     ylog=kwargs.get('ylog',False)
@@ -255,26 +336,25 @@ def histplot1D(df,**kwargs):
     else:
         ylabel=kwargs.get('ylabel','Counts')
     
-    if not cumulative:
-        counts,edges=np.histogram(df.values,numbins,range=binrange,normed=normalize) 
-        step=np.diff(edges)
-        centers=edges[:-1]+step*0.5            
-        dictout={'counts':counts,'centers':centers,'edges':edges,'data':df}
-    else:            
-        counts,lowlim,barwidths,extrapoints=cumfreq(df.values,numbins=numbins,defaultreallimits=binrange)
-        if normalize:
-            totcounts=((df.values>missinglowval)&(df.values<missinghighval)).sum()
-            counts=counts/totcounts
-        step=(binrange[1]-binrange[0])/numbins
-        binvals=np.arange(binrange[0],binrange[1],step)
-        centers=[v+step*0.5 for v in binvals]
-        edges=np.hstack((binvals,binvals[-1]+step))
-        dictout={'counts':counts,'centers':centers,'edges':edges,'data':df}
+    if datatype is 'histdict':
+        dictout=datain
+    else:
+        if not cumulative:
+            counts,edges=np.histogram(datain.values,numbins,range=binrange,normed=normalize) 
+            step=np.diff(edges)
+            centers=edges[:-1]+step*0.5            
+            dictout={'counts':counts,'centers':centers,'edges':edges}
+        else:            
+            counts,lowlim,barwidths,extrapoints=cumfreq(datain.values,numbins=numbins,defaultreallimits=binrange)
+            if normalize:
+                totcounts=((datain.values>missinglowval)&(datain.values<missinghighval)).sum()
+                counts=counts/totcounts
+            step=(binrange[1]-binrange[0])/numbins
+            binvals=np.arange(binrange[0],binrange[1],step)
+            centers=[v+step*0.5 for v in binvals]
+            edges=np.hstack((binvals,binvals[-1]+step))
+            dictout={'counts':counts,'centers':centers,'edges':edges}
     if doplot:
-        if ar:
-            ar=ar*(edges[-1]-edges[0])/(max(counts)*1.2)
-        else:
-            ar=(edges[-1]-edges[0])/(max(counts)+1.2)
         plt.rc('font', family='serif', size=fsize)
         fig1=plt.figure(fignum)
         ax1=fig1.add_subplot(111)
@@ -292,7 +372,11 @@ def histplot1D(df,**kwargs):
             logplot=False
             ax1.set_aspect(ar)
             
-        ax1.bar(centers,counts,width=barwidths,align='center',log=logplot)        
+        ax1.bar(centers,counts,width=barwidths,align='center',log=logplot)  
+        if ar:
+            fig1.set_size_inches(figheight*ar,figheight)
+            forceAspect(ax1,ar)
+
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         if ylimits:
@@ -300,8 +384,9 @@ def histplot1D(df,**kwargs):
         if xlimits:
             plt.xlim(xlimits)
         if saveplot:
-            fig1.savefig(plotfilename)
-        fig1.canvas.draw()
+            fig1.canvas.print_figure(plotfilename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
+        if showplot:
+            fig1.canvas.draw()
     return dictout
 
 def histplot2D(dfx,dfy,**kwargs):
@@ -382,7 +467,7 @@ def histplot2D(dfx,dfy,**kwargs):
             fig.savefig(plotfilename)
     
     dictout={'counts':xycounts,'xedges':xedges,'yedges':yedges,'xcenters':xcenters,
-             'ycenters':ycenters,'xdata':dfx,'ydata':dfy}
+             'ycenters':ycenters}
     return dictout
 
 def althistplot(dfin,**kwargs):
@@ -461,7 +546,7 @@ def althistplot(dfin,**kwargs):
             fig.savefig(plotfilename)
     
     dictout={'counts':altcounts,'datedges':datedges,'altedges':altedges,'datcenters':datcenters,
-             'altcenters':altcenters,'data':dfin}
+             'altcenters':altcenters}
     return dictout
 
     
@@ -492,7 +577,7 @@ if __name__=="__main__":
 #    picklefile=mtools.get_files('Select pickle file to histogram',filetype=('.p','*.p'))[0]
     startdate=datetime.datetime(2013,1,1,00)
     enddate=datetime.datetime(2014,11,4,1)
-    altitudes=np.arange(150,15000,30)
+    altitudes=np.arange(0.150,15.000,0.030)
     timestep='600S'
     mplfiles=filegetter(filedir=topdir,altitudes=altitudes,starttime=startdate,
                         endtime=enddate,timestep=timestep,topickle=True,

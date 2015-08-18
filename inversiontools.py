@@ -87,7 +87,7 @@ def molecular(z,wave=532.0):
     T_s = 288.15  #[K] reference temperature
     P_s = 101325.0  #[Pa] reference pressure
     N_s = 2.547e25  #[1/km^3]  reference number concentration
-    gamma = 0.0279 #[unitless] depolarization factor (from Kovalev pg.35)
+    gamma = 0.0071 #[unitless] depolarization factor (for narrow band fillter, from Young[1980])
 
     #calculate reference index of refraction using a polynomial approximation
 
@@ -114,7 +114,7 @@ def molecular(z,wave=532.0):
     sigma=sigma*1000.0 #convert to 1/km
     #For Rayleigh scattering the extinction to backscatter ratio is 8*pi/3
 
-    beta = 3*sigma/(8*np.pi)
+    beta = 3.0*sigma/(8.0*np.pi)
 
     return T,P,d,beta,sigma
 
@@ -639,11 +639,13 @@ def klett(P_in,lrat_in,r_m=None,k=1,wave=532.0):
             sigma.loc[alt] = sigma_m
             beta.loc[alt] = lrat.loc[alt]*sigma_m**k
             oldalt = alt
+            Xint=0.0
         
         else:
-            X1 = (lrat.loc[oldalt]/lrat.loc[alt])**(1/k)   
-            sigma.loc[alt] = X1*np.exp((S_new.loc[alt]-S_new.loc[oldalt])/k)/ \
-            (sigma.loc[oldalt]**-1+(1.0/k)*(1+X1*np.exp((S_new.loc[alt]-S_new.loc[oldalt])/k))*(oldalt-alt))
+            X1 = (lrat.loc[r_m]/lrat.loc[alt])**(1/k)
+            X2 = np.exp((S_new.loc[alt]-S_new.loc[r_m])/k)
+            Xint += X1*X2*(oldalt-alt)
+            sigma.loc[alt] = X1*X2/(sigma_m**-1+(2/k)*Xint)
             
             beta.loc[alt] = lrat.loc[alt]*sigma.loc[alt]**k
             oldalt = alt
@@ -671,21 +673,22 @@ def klett2(P_in,lrat_in,**kwargs):
     r_m=kwargs.get('r_m',None)
     wave=kwargs.get('wave',532.0)
     
-    lrat=pan.Series(data=0.0,index=lrat_in.index)
-    
-    grouped=lrat_in.groupby(lrat_in)
-    
-    #Klett definition of lidar ratio is backscatter/extintion not the other way round
-    for name,group in grouped:
-        if name==0.0:
-            continue
-        else:
-            lrat.ix[group.index]=1.0/group
+#    lrat=pan.Series(data=0.0,index=lrat_in.index)
+#    
+#    grouped=lrat_in.groupby(lrat_in)
+#    
+#    #Klett definition of lidar ratio is backscatter/extintion not the other way round
+#    for name,group in grouped:
+#        if name==0.0:
+#            continue
+#        else:
+#            lrat.ix[group.index]=1.0/group
             
 
     lrat_R=3.0/(8.0*np.pi)
     altitudes = P_in.index.values
-    
+    lrat_new=lrat_in.replace(0.0,(8.0*np.pi)/3.0,inplace=False)
+    lrat=1.0/lrat_new
     if r_m is None:
         for a in altitudes[::-1]:
             if not np.isnan(P_in.ix[a]):
@@ -738,11 +741,12 @@ def klett2(P_in,lrat_in,**kwargs):
                 
             beta.ix[alt]=np.exp(delta_Sprime)/((1.0/beta_m)+S_int)
                 
-            if beta.ix[alt]<=beta_R.ix[alt]:
-                beta_p=0.0
-            else:
-                beta_p=beta.ix[alt]-beta_R.ix[alt]
-            sigma.ix[alt]=(beta_p/lrat.ix[alt])+beta_R.ix[alt]/lrat_R
+#            if beta.ix[alt]<=beta_R.ix[alt]:
+#                beta_p=0.0
+#            else:
+#                beta_p=beta.ix[alt]-beta_R.ix[alt]
+#            sigma.ix[alt]=(beta_p/lrat.ix[alt])+beta_R.ix[alt]/lrat_R
+            sigma.ix[alt]=beta.ix[alt]/lrat.ix[alt]
             oldalt = alt
             old_delta_Sprime=delta_Sprime
     return beta,sigma
@@ -753,7 +757,7 @@ def iterative_klett(P_in,lrat_p,**kwargs):
     r_m=kwargs.get('r_m',None)
     maxiter=kwargs.get('maxiter',20)
     deltathresh=kwargs.get('deltathresh',0.1)
-    lrat_min=kwargs.get('lrat_min',8.0*np.pi/3.0)
+    lrat_min=kwargs.get('lrat_min',0.0)
     lrat_max=kwargs.get('lrat_max',100.0)
     verbose=kwargs.get('verbose',False)
     
@@ -771,18 +775,20 @@ def iterative_klett(P_in,lrat_p,**kwargs):
         if verbose:
             print "Iteration #{0}".format(n)
         lrat_new=(lrat_m*beta_m+lrat_p*(back_old-beta_m)).div(back_old)
-        back_new,ext_new=klett(P_in=P_in,lrat_in=lrat_new,r_m=r_m,k=k,wave=wave)
-        
-        delta_ext=abs(100.0*(ext_new-ext_old).div(ext_old))
         for i in lrat_new.index:
             if lrat_new.ix[i]<lrat_min:
-                lrat_new.ix[i]=lrat_min
+                lrat_new.ix[i]=lrat_old.ix[i]
             elif lrat_new.ix[i]>lrat_max:
                 lrat_new.ix[i]=lrat_max
             elif lrat_old.ix[i]==lrat_m:
                 lrat_new.ix[i]=lrat_m
+        
+        back_new,ext_new=klett(P_in=P_in,lrat_in=lrat_new,r_m=r_m,k=k,wave=wave)
+        
+        delta_ext=abs(100.0*(ext_new-ext_old).div(ext_old))
         back_old=back_new
         ext_old=ext_new
+        lrat_old=lrat_new
         
         if n>=maxiter:
             if verbose:
@@ -794,7 +800,7 @@ def iterative_klett(P_in,lrat_p,**kwargs):
             lrat_out=lrat_new
             for i in lrat_new.index:
                 if lrat_new.ix[i]<lrat_min:
-                    lrat_out.ix[i]=lrat_min
+                    lrat_out.ix[i]=lrat_old.ix[i]
                 elif lrat_new.ix[i]>lrat_max:
                     lrat_out.ix[i]=lrat_max
                 elif lrat_old.ix[i]==lrat_m:

@@ -9,7 +9,6 @@ Created on Wed Apr 24 12:08:57 2013
 
 """
 import os,sys,site
-home=os.environ['homepath']
 
 from Tkinter import Tk
 import tkFileDialog
@@ -1068,7 +1067,7 @@ class MPL:
             NRBtemp=pan.DataFrame(index=tempdat[n].index,columns=tempdat[n].columns)
             rsq = (np.array(tempdat[n].columns, dtype=float))**2
             for i in range(len(tempdat[n].index)):
-                tempval = ((tempdat[n].iloc[i] - bg[n][i])*deadtimecor[n,i] - interp_afterpulse)/energy[i]                
+                tempval = ((tempdat[n].iloc[i] - bg[n].iloc[i])*deadtimecor[n,i] - interp_afterpulse)/energy[i]                
                 NRBtemp.iloc[i] = tempval*rsq/interp_overlap
             
             NRBout.append(NRBtemp.astype('float64'))
@@ -2056,5 +2055,3 @@ if __name__ == '__main__':
     
     MPLmasked=NRB_mask_all(MPLtest,inplace=False)
 #    os.chdir(olddir)
-
-    MPLtest

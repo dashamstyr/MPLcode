@@ -1,7 +1,5 @@
 #from __future__ import absolute_import
 import os,glob,site
-home=os.environ['homepath']
-site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
 
 import numpy as np
 import datetime
@@ -77,8 +75,8 @@ def fileproc(**kwargs):
     minwidth=kwargs.get('minwidth',4)
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
-    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(5,15))
-    PBLwidth=kwargs.get('PBLwidth',10)
+    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    PBLwidth=kwargs.get('PBLwidth',5)
     sigma0=kwargs.get('sigma0',None)
     depolsigma0=kwargs.get('depolsigma0',None)
     waterthresh=kwargs.get('waterthresh',0.10)
@@ -279,6 +277,7 @@ def proccessall(**kwargs):
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    PBLwdith=kwargs.get('PBLwidth',5)
     sigma0=kwargs.get('sigma0',0.4)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.25)
@@ -325,7 +324,7 @@ def proccessall(**kwargs):
                 'layernoisethresh':layernoisethresh,'bg_alt':bg_alt,'datatype':datatype,
                 'winsize':winsize,'wavelet':wavelet,'noisethresh':noisethresh,'cloudthresh':cloudthresh,
                 'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
-                'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'sigma0':sigma0,'waterthresh':waterthresh,
+                'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'PBLwidth':PBLwidth,'sigma0':sigma0,'waterthresh':waterthresh,
                 'icethresh':icethresh,'smokethresh':smokethresh,'dustthresh':dustthresh,'refalt':refalt,
                 'method':method,'lrat':lrat,'mode':mode,'NRB_limits':NRB_limits,'depol_limits':depol_limits,
                 'back_limits':back_limits,'ext_limits':ext_limits,'hours':hours,'fsize':fsize}
@@ -516,9 +515,9 @@ def clearall():
         
 if __name__ == '__main__':
     
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Whistler-0327')
+    os.chdir('K:\Smoke2015')
 #    os.chdir('K:\MPL Backup 20150706')
-    altrange=np.arange(0.150,15.530,0.030)
+    altrange=np.arange(0.150,5.030,0.030)
     timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
@@ -534,11 +533,14 @@ if __name__ == '__main__':
     SNRmask=True
     SNRthresh=0.5
     
+    PBLCWTrange=np.arange(4,15)
+    PBLwidth=7
+    
     molthresh=1.0
     layernoisethresh=1.0
-    sigma0=0.05
-    depolsigma0=0.01
-    cloudthresh=(1.0,0.20)
+    sigma0=0.1
+    depolsigma0=0.05
+    cloudthresh=(1.0,0.40)
     waterthresh=0.10
     icethresh=0.35
     smokethresh=0.10
@@ -552,12 +554,12 @@ if __name__ == '__main__':
     dolayerplot=True
     docorplot=True
     verbose=False
-#    hours=['02','04','06','08','10','12','14','168','18','20','22']
-    hours=['06','06','09','12','15','18','21']
+#    hours=['02','04','06','08','10','12','14','16','18','20','22']
+    hours=[]
     NRB_limits=(0.0,0.5,0.1) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,1e-2,2e-3)
-    ext_limits=(0.0,2e-1,4e-2)
+    back_limits=(0.0,5e-3,1e-3)
+    ext_limits=(0.0,1e-1,2e-2)
     interpolate='none'
     
     kwargs={'altrange':altrange,'timestep':timestep,'savetype':savetype,'procsavepath':procsavepath,
@@ -569,7 +571,8 @@ if __name__ == '__main__':
             'depol_limits':depol_limits,'back_limits':back_limits,'ext_limits':ext_limits,
             'interpolate':interpolate, 'sigma0':sigma0, 'depolsigma0':depolsigma0,
             'cloudthresh':cloudthresh,'waterthresh':waterthresh,'icethresh':icethresh,
-            'smokethresh':smokethresh,'dustthresh':dustthresh,'hours':hours}
+            'smokethresh':smokethresh,'dustthresh':dustthresh,'hours':hours,
+            'PBLCWTrange':PBLCWTrange,'PBLwidth':PBLwidth}
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)

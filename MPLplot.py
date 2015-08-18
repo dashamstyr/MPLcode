@@ -1,7 +1,5 @@
 #from __future__ import absolute_import
 import os,sys,site
-home=os.environ['homepath']
-site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
 
 import numpy as np
 import os, sys
@@ -9,7 +7,7 @@ import numpy as np
 import bisect
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-from MPLcode import MPLtools as mtools
+import MPLtools as mtools
 from matplotlib.colors import ListedColormap
 import matplotlib.ticker as mtick
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -616,7 +614,7 @@ def plotall(mplfile,**kwargs):
     
 if __name__=='__main__': 
     alt_resample=True      
-    altrange=np.arange(0.150,4.030,0.030)
+    altrange=np.arange(0.150,5.030,0.030)
     time_resample=False
     timestep='600S'
     starttime=datetime.datetime(2015,07,06,00)
@@ -636,14 +634,15 @@ if __name__=='__main__':
     dolayerplot=True
     docorplot=True
 #    hours=['02','04','06','08','10','12','14','168','18','20','22']
-    hours=['06','06','09','12','15','18','21']
+#    hours=['03','06','09','12','15','18','21']
+    hours=['06','12','18']
     NRB_limits=(0.0,0.5,0.1) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,1e-3,2e-4)
-    ext_limits=(0.0,2e-2,4e-3)
+    back_limits=(0.0,2e-3,5e-4)
+    ext_limits=(0.0,1e-1,2e-2)
     interpolate='none'
 
-    os.chdir('E:\Smoke2015\Processed')
+    os.chdir('K:\Smoke2015\Processed')
 
     filepath = mtools.get_files('Select Processed MPL file(s)', filetype = ('.h5', '*.h5'))
     

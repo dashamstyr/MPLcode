@@ -6,8 +6,6 @@ Created on Fri Jan 31 10:54:41 2014
 """
 #from __future__ import absolute_import
 import os,sys,site
-home=os.environ['homepath']
-site.addsitedir('{0}\\Dropbox\\Python_Scripts\\GIT_Repos\\'.format(home))
 
 import pandas as pan
 import numpy as np
@@ -169,15 +167,14 @@ def PBL_detect(MPLin,**kwargs):
     """
     """    
     wavelet=kwargs.get('wavelet',dog)
-    widths=kwargs.get('widths',np.arange(5,15))
-    layerwidth=kwargs.get('layerwidth',10)
-    numprofs=kwargs.get('numprofs',1)
+    widths=kwargs.get('widths',np.arange(4,15))
+    layerwidth=kwargs.get('layerwidth',4)
+    numprofs=kwargs.get('numprofs',3)
     bg_alt=kwargs.get('bg_alt',None)
     datatype=kwargs.get('datatype','NRB')
     layer_min=kwargs.get('layer_min',None)
     mol_min=kwargs.get('mol_min',None)
-    winsize=kwargs.get('winsize',30) 
-    bg_alt=kwargs.get('bg_alt',None)
+    winsize=kwargs.get('winsize',10) 
     depol_method=kwargs.get('depol_method','NRB')
     
     if bg_alt is None:
@@ -379,6 +376,10 @@ def find_layers(MPLin,**kwargs):
                     layertype='Insufficient Signal'
                     layersubtype='Insufficient Signal'
                     layerratio=udefrat
+                elif meandepolrat >= 0.5:
+                    layertype='Cloud'
+                    layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                           icethresh=icethresh)    
                 elif peakval >= cloudthresh[0]:
                     layertype='Cloud'  
                     layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
@@ -701,8 +702,8 @@ def findalllayers(**kwargs):
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     doPBL=kwargs.get('doPBL',True)
     PBLwavelet=kwargs.get('PBLwavelet',dog)
-    PBLCWTrange=kwargs.get('PBLCWTrange',[10])
-    PBLwidth=kwargs.get('PBLwidth', 10)
+    PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(4,15))
+    PBLwidth=kwargs.get('PBLwidth', 4)
     savemasks=kwargs.get('savemasks',False)
     savemaskname=kwargs.get('savemaskname','testmasksall.h5')
     sigma0=kwargs.get('sigma0',None)
@@ -727,8 +728,12 @@ def findalllayers(**kwargs):
                    'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,'maxaeroalt':maxaeroalt,
                    'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
                    'dustthresh':dustthresh,'sigma0':sigma0,'depolsigma0':depolsigma0}
-    layers=find_layers(mplin,**layerkwargs)  
-    mol_min=molecular.loc['Layer0']['Base']
+    layers=find_layers(mplin,**layerkwargs) 
+    
+    try:
+        mol_min=molecular.loc['Layer0']['Base']
+    except KeyError:
+        mol_min=pan.Series(data=mplin.NRB[0].columns[-1],index=mplin.NRB[0].index)
     try:
         layer_min=layers.loc['Layer0']['Base']
     except KeyError:
@@ -1076,16 +1081,17 @@ def basiccorrection(mpl,**kwargs):
     #           coefkwargs['method']=method
     #           coefkwargs['energy']=mpl.header['energy'].ix[t]
     #           coefkwargs['calrange']=calrange
-               tempbeta,tempsigma,newlrat=itools.iterative_klett(tempprof,templrat,verbose=False)
+#               tempbeta,tempsigma,newlrat=itools.iterative_klett(tempprof,templrat,verbose=False)
+               tempbeta,tempsigma=itools.klett2(tempprof,templrat)
                tempbackscatter.ix[t]=tempbeta
                tempextinction.ix[t]=tempsigma
-               templidarratio.ix[t]=newlrat
+#               templidarratio.ix[t]=newlrat
        backout.append(tempbackscatter)
        extout.append(tempextinction)
-       lidarratout.append(templidarratio)
+#       lidarratout.append(templidarratio)
     mpl.backscatter=backout
     mpl.extinction=extout
-    mpl.scenepanel[0]['Lidar_Ratio']=lidarratout[0]
+#    mpl.scenepanel[0]['Lidar_Ratio']=lidarratout[0]
     
     return mpl
 
@@ -1396,15 +1402,15 @@ def quickplot(df,**kwargs):
 
     
 if __name__=='__main__':
-    os.chdir('E:\Smoke2015')
-    savefilepath='E:\Smoke2015\Processed'
-    plotfilepath='E:\Smoke2015\Figures'
+    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Ucluelet Files')
+    savefilepath='.\Processed'
+    plotfilepath='.\Figures'
     filepath=mtools.get_files('Select raw files',filetype=('.mpl','*.mpl'))[0]
     filename=os.path.split(filepath)[-1]
     savefilename='{0}_scenepanel.h5'.format(filename.split('_proc')[0])
     plotfilename='{0}_coefplot.png'.format(filename.split('_proc')[0])
     timestep='240S'
-    altrange = np.arange(0.150,10.030,0.030)
+    altrange = np.arange(0.150,10.060,0.060)
     SNRthreshold=1.0
     molthresh=1.0
     layernoisethresh=1.0
@@ -1423,12 +1429,12 @@ if __name__=='__main__':
     #    mpltemp.save_to_HDF(savefilename)
     #    mplemp2=sceneoptimize(mpltemp,method='klett2',inplace=False)
     
-    mpltest=mtools.NRB_mask_all(mpltest)
+#    mpltest=mtools.NRB_mask_all(mpltest)
     starttime = None
     endtime = None
     hours = ['03','06','09','12','15','18','21']
-    topplot_limits=(0.0,0.05,0.01)
-    bottomplot_limits=(0.0,2.0,0.5)
+    topplot_limits=(0.0,1e-3,2e-4)
+    bottomplot_limits=(0.0,2e-2,5e-3)
 
     kwargs = {'saveplot':False,'showplot':True,'verbose':True,
                 'savefilepath':plotfilepath,'savefilename':plotfilename,
