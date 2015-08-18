@@ -515,9 +515,12 @@ def clearall():
         
 if __name__ == '__main__':
     
-    os.chdir('K:\Smoke2015')
+#    os.chdir('K:\Smoke2015')
 #    os.chdir('K:\MPL Backup 20150706')
-    altrange=np.arange(0.150,5.030,0.030)
+    olddir=os.getcwd()
+    datafile=mtools.set_dir('Select folder containing .mpl data to process')
+    os.chdir(datafile)
+    altrange=np.arange(0.150,15.030,0.030)
     timestep='120S'
     savetype='standard'
     procsavepath='.\Processed'
@@ -576,5 +579,5 @@ if __name__ == '__main__':
 
     mpl1=fileproc(**kwargs)
 #    proccessall(**kwargs)
-    
+    os.chdir(olddir)
     
