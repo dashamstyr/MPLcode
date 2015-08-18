@@ -540,7 +540,7 @@ if __name__ == '__main__':
     layernoisethresh=1.0
     sigma0=0.1
     depolsigma0=0.05
-    cloudthresh=(1.0,0.40)
+    cloudthresh=(1.0,0.50)
     waterthresh=0.10
     icethresh=0.35
     smokethresh=0.10
@@ -558,8 +558,8 @@ if __name__ == '__main__':
     hours=[]
     NRB_limits=(0.0,0.5,0.1) 
     depol_limits=(0.0,0.5,0.1)
-    back_limits=(0.0,5e-3,1e-3)
-    ext_limits=(0.0,1e-1,2e-2)
+    back_limits=(0.0,5e-2,1e-2)
+    ext_limits=(0.0,2e-1,5e-2)
     interpolate='none'
     
     kwargs={'altrange':altrange,'timestep':timestep,'savetype':savetype,'procsavepath':procsavepath,

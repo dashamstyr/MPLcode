@@ -52,7 +52,7 @@ enddate=datetime.datetime(2018,4,23,1)
 altitudes=np.arange(0.150,10.000,0.030)
 timestep='240S'
 SNRthresh=2.0
-dfcollect=False
+dfcollect=True
 saveresult=True
 doplots=True
 

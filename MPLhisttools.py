@@ -357,6 +357,8 @@ def histplot1D(datain,**kwargs):
     if doplot:
         plt.rc('font', family='serif', size=fsize)
         fig1=plt.figure(fignum)
+        if ar:
+            fig1.set_size_inches(figheight*ar,figheight)
         ax1=fig1.add_subplot(111)
         barwidths=step
         if xlog:
@@ -373,9 +375,7 @@ def histplot1D(datain,**kwargs):
             ax1.set_aspect(ar)
             
         ax1.bar(centers,counts,width=barwidths,align='center',log=logplot)  
-        if ar:
-            fig1.set_size_inches(figheight*ar,figheight)
-            forceAspect(ax1,ar)
+        
 
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
