@@ -40,11 +40,13 @@ def PBLanalyze(**kwargs):
     layerCWTrange=kwargs.get('layerCWTrange',np.arange(2,5))
     PBLwavelet=kwargs.get('PBLwavelet',mproc.dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(2,10))
+    PBLwidth=kwargs.get('PBLwidth',7)
     sigma0=kwargs.get('sigma0',0.01)
     waterthresh=kwargs.get('waterthresh',0.10)
     icethresh=kwargs.get('icethresh',0.35)
     smokethresh=kwargs.get('smokethresh',0.10)
     dustthresh=kwargs.get('dustthresh',0.20)
+    verbose=kwargs.get('verbose',False)
     
     if not filedir:
         filedir=mtools.set_dir('Select file directory to process')
@@ -62,11 +64,12 @@ def PBLanalyze(**kwargs):
     datelist=[]
     PBL=pan.DataFrame()
     caplayer=pan.DataFrame()
+    clearcap=pan.DataFrame()
     layerkwargs={'altrange':altrange,'timestep':timestep,'bg_alt':bg_alt,'datatype':datatype,
              'molthresh':molthresh,'winsize':winsize,'layernoisethresh':layernoisethresh,
              'wavelet':wavelet,'noisethresh':noisethresh,'cloudthresh':cloudthresh,
              'CWTwidth':CWTwidth,'minwidth':minwidth,'layerCWTrange':layerCWTrange,
-             'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'sigma0':sigma0,
+             'PBLwavelet':PBLwavelet,'PBLCWTrange':PBLCWTrange,'PBLwidth':PBLwidth,'sigma0':sigma0,
              'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
              'dustthresh':dustthresh}
     
@@ -100,21 +103,26 @@ def PBLanalyze(**kwargs):
             periods.append(tempperiods)
         oldday=newday
             
-    
-    for mplgrp,datgrp,e,p in zip(mpllist,datelist,ephemera,periods):    
+    repnum=1
+    for mplgrp,datgrp,e,p in zip(mpllist,datelist,ephemera,periods):  
+        if verbose:
+            print 'Processing Group {0} of {1}'.format(repnum,len(mplgrp))
+        repnum+=1
         for n in range(len(e)-1):
             tempmpl=[m for m,t in zip(mplgrp,datgrp) if (t>=e[n])and(t<e[n+1])]
             if len(tempmpl)==0:
                 continue
-            else:                
-                templayerdict=get_layers(tempmpl,**layerkwargs)
-                tempPBL=pan.DataFrame(data=templayerdict['pbl'],columns=[p[n]])
-                tempcap=find_capper(templayerdict,p[n])
+            else: 
+                templayerdict=get_layers(tempmpl,**layerkwargs)                
+                tempcap,tempclear,tempPBL=find_capper(templayerdict,p[n])
                 PBL=PBL.append(tempPBL)
                 caplayer=caplayer.append(tempcap)
+                clearcap=clearcap.append(tempclear)
+                
+                
                 
     os.chdir(olddir)
-    return PBL,caplayer
+    return PBL,caplayer,clearcap
     
 
 def get_ephemera(loc,datein,localzone=pytz.timezone('US/Pacific')):
@@ -198,18 +206,40 @@ def get_layers(rawfiles,**kwargs):
     return layerdict
 
 def find_capper(layerdict,dayperiod,typemode='Sub-Type'):
-    molalt=layerdict['molecular']['Layer0']['Base']
-    layeralt=layerdict['layers']['Layer0']['Base']
-    layertype=layerdict['layers']['Layer0'][typemode]
+    maxalt=layerdict['mpl'].NRB[0].columns[-1]
+    mplindex=layerdict['mpl'].NRB[0].index
+    try:
+        molalt=layerdict['molecular']['Layer0']['Base']
+    except KeyError:
+        molalt=pan.series(data=maxalt,index=mplindex)
     
-    captype=pan.DataFrame(index=molalt.index,columns=[dayperiod])
+    try:    
+        layeralt=layerdict['layers']['Layer0']['Base']
+        layertype=layerdict['layers']['Layer0'][typemode]
+    except KeyError:
+        layeralt=pan.Series(data=maxalt,index=mplindex)
+        layertype=pan.Series(data=np.nan,index=mplindex)
+    
+    PBLalt=layerdict['pbl']
+    molalt.fillna(maxalt,inplace=True)
+    layeralt.fillna(maxalt,inplace=True)
+    
+    
+    captype=pan.DataFrame(index=mplindex,columns=[dayperiod])
+    clearcap=pan.DataFrame(index=mplindex,columns=[dayperiod])
+    PBL=pan.DataFrame(index=mplindex,columns=[dayperiod])
     for i in captype.index:
         if layeralt.ix[i]<molalt.ix[i]:
             captype.ix[i]=layertype.ix[i]
+            PBL.ix[i]=PBLalt.ix[i]
+            clearcap.ix[i]='Other'
+            
         else:
-            captype.ix[i]='Clear Air'
-    
-    return captype
+            captype.ix[i]=np.nan
+            PBL.ix[i]=np.nan
+            clearcap.ix[i]='Clear Air'
+
+    return captype,clearcap,PBL
         
 #def pieplot(dfin,**kwargs):
 #    
@@ -270,22 +300,71 @@ def violinplot(dfin,**kwargs):
 
 if __name__=='__main__':
     
-    os.chdir('C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\UBC Data')
+#    os.chdir('K:\\All_MPL_Data')
+#    os.chdir('/data/lv1/pcottle/MPLData/Raw_Files')
     timestep='240S'
+    print 'Processing UBC1 files'
     altrange=np.arange(0.150,2.0,0.03)
-#    startdate=datetime.datetime(2013,8,27,0)
-#    enddate=datetime.datetime(2015,1,6,23)
-    PBL,caplayer=PBLanalyze(timestep=timestep,altrange=altrange)
-    store=pan.HDFStore('.\Processed\UBC_Boundary_Layer_stats_all.h5')
+    startdate=datetime.datetime(2013,8,27,0)
+    enddate=datetime.datetime(2014,1,6,23)
+    location=(48.0256,-123.25)
+    PBL,caplayer,clearcap=PBLanalyze(timestep=timestep,altrange=altrange,
+                                     startdate=startdate,enddate=enddate,location=location,
+                                     filedir='/data/lv1/pcottle/MPLData/Raw_Files',verbose=True)
+#    store=pan.HDFStore('K:\\All_MPL_Stats\\Boundary Layer\\UBC1_Boundary_Layer_stats_all.h5')
+    store=pan.HDFStore('/data/lv1/pcottle/MPLStats/UBC1_Boundary_Layer_stats_all.h5')
     store['PBL']=PBL
     store['caplayer']=caplayer
-#    PBL=store['PBL']
-#    caplayer=store['caplayer']
-    
+    store['clearcap']=clearcap    
     store.close()
+    del PBL,caplayer,clearcap
+    
+    print 'Processing Whistler files'
+    startdate=datetime.datetime(2014,1,7,0)
+    enddate=datetime.datetime(2014,4,10,23)
+    location=(50.1447,-122.1606)
+    PBL,caplayer,clearcap=PBLanalyze(timestep=timestep,altrange=altrange,
+                                     startdate=startdate,enddate=enddate,location=location,
+                                     filedir='/data/lv1/pcottle/MPLData/Raw_Files',verbose=True)
+    store=pan.HDFStore('/data/lv1/pcottle/MPLStats/Whistler_Boundary_Layer_stats_all.h5')
+    store['PBL']=PBL
+    store['caplayer']=caplayer
+    store['clearcap']=clearcap    
+    store.close()
+    del PBL,caplayer,clearcap
+    
+    print 'Processing Ucluelet files'    
+    startdate=datetime.datetime(2014,4,11,0)
+    enddate=datetime.datetime(2014,7,22,23)
+    location=(48.9167,-125.5333)
+    PBL,caplayer,clearcap=PBLanalyze(timestep=timestep,altrange=altrange,
+                                     startdate=startdate,enddate=enddate,location=location,
+                                     filedir='/data/lv1/pcottle/MPLData/Raw_Files',verbose=True)
+    store=pan.HDFStore('/data/lv1/pcottle/MPLStats/Ucluelet_Boundary_Layer_stats_all.h5')
+    store['PBL']=PBL
+    store['caplayer']=caplayer
+    store['clearcap']=clearcap    
+    store.close()  
+    del PBL,caplayer,clearcap
+    
+    print 'Processing UBC2 files'
+    startdate=datetime.datetime(2015,5,5,0)
+    enddate=datetime.datetime(2015,12,31,23)
+    location=(48.0256,-123.25)
+    PBL,caplayer,clearcap=PBLanalyze(timestep=timestep,altrange=altrange,
+                                     startdate=startdate,enddate=enddate,location=location,
+                                     filedir='/data/lv1/pcottle/MPLData/Raw_Files',verbose=True)
+    store=pan.HDFStore('/data/lv1/pcottle/MPLStats/UBC2_Boundary_Layer_stats_all.h5')
+    store['PBL']=PBL
+    store['caplayer']=caplayer
+    store['clearcap']=clearcap    
+    store.close()    
      
-    violinplot(PBL)
-    capplot=caplayer.apply(pan.value_counts).transpose()
-    barplot(capplot)
+#    violinplot(PBL)
+#    
+#    capplot=caplayer.apply(pan.value_counts).transpose()
+#    barplot(capplot)
+#    clearplot=clearcap.apply(pan.value_counts).transpose()
+#    barplot(clearplot)
 #    piefig=pieplot(caplayer)    
     

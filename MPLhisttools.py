@@ -19,6 +19,7 @@ import MPLtools as mtools
 import MPLprocesstools as mproc
 import MPLfileproc as mfile
 import MPLplot as mplot
+import LNC_tools as ltools
 
 def progress(datanum,tot_loops):
     """
@@ -223,12 +224,32 @@ def dataextractor(datatype='NRB',**kwargs):
                 dfout=mpltemp.SNR['depolrat'][0]
             elif datatype=='Type':
                 dfout=mpltemp.scenepanel[0]['Type']
-            elif datatype=='Subtype':
+            elif datatype=='Sub-Type':
                 dfout=mpltemp.scenepanel[0]['Sub-Type']
+            elif datatype=='Delta':
+                dfout=mpltemp.scenepanel[0]['Delta']
             
         except IOError:
             print "Could not find file named {0}".format(loadfilename)
-    else:
+    elif loadfiletype=='LNCHDF':
+        try:
+            LNCtemp=ltools.LNC()
+            LNCtemp.fromHDF(loadfilename)
+            if datatype=='BR':
+                dfout=LNCtemp.BR
+            elif datatype=='PR':
+                dfout=LNCtemp.PR
+            elif datatype=='SNR':
+                dfout=LNCtemp.SNR['BR']
+            elif datatype=='Type':
+                dfout=LNCtemp.scenepanel['Type']
+            elif datatype=='Sub-Type':
+                dfout=LNCtemp.scenepanel['Sub-Type']
+            elif datatype=='Delta':
+                dfout=LNCtemp.scenepanel['Delta']
+        except IOError:
+            print "Could not find file named {0}".format(loadfilename)
+    else:            
         if loadfiletype=='pickle':
             try:
                 with open(loadfilename,'rb') as pf:
@@ -249,8 +270,10 @@ def dataextractor(datatype='NRB',**kwargs):
                     tempdf=MPLfile.SNR['depolrat'][0]
                 elif datatype=='Type':
                     tempdf=MPLfile.scenepanel[0]['Type']
-                elif datatype=='Subtype':
+                elif datatype=='Sub-Type':
                     tempdf=MPLfile.scenepanel[0]['Sub-Type']
+                elif datatype=='Delta':
+                    dfout=mpltemp.scenepanel[0]['Delta']
                 dflist.append(tempdf)
             
             dfout=pan.concat(dflist)
@@ -266,32 +289,36 @@ def dataextractor(datatype='NRB',**kwargs):
     return dfout
 
 def scenefilter(dfin,dffilt,**kwargs):
+    filtmode=kwargs.get('filtmode','Type')
     filterterms=kwargs.get('filterterms',None)
-    inplace=kwargs.get('inplace',False)
-    
-    if inplace:
-        dfout=dfin
-    else:
-        dfout=deepcopy(dfin)
         
-    dftemp=dffilt.isin(filterterms)
-        
-    dftemp.replace(False,np.nan,inplace=True)
-    dfout=dfout*dftemp
-        
+    if filtmode=='Type':    
+        dftemp=dffilt.isin(filterterms)
+        dftemp.replace(False,np.nan,inplace=True)
+        dfout=dfin*dftemp
+    elif filtmode=='LT':
+        dfout=dfin[dffilt<=filterterms[0]]
+        dfout.replace(False,np.nan,inplace=True)
+    elif filtmode=='GT':
+        dfout=dfin[dffilt>=filterterms[0]]
+        dfout.replace(False,np.nan,inplace=True)
+    elif filtmode=='Range':
+        dfout=dfin[dffilt>=filterterms[0]]
+        dfout=dfout[dfout<=filterterms[1]]
+        dfout.replace(False,np.nan,inplace=True)
+       
     return dfout
 
-def SNRfilter(dfin,dfSNR,thresh=1.0,inplace=True):
-    if inplace:
-        dfout=dfin
-    else:
-        dfout=deepcopy(dfin)
-    
-    dftemp=dfSNR[dfSNR>thresh]
-    dftemp.replace(False,np.nan,inplace=True)
-    dfout=dfout*dftemp
-        
-    return dfout
+#def SNRfilter(dfin,dfSNR,thresh=1.0):
+#    if inplace:
+#        dftemp=dfin
+#    else:
+#        dftemp=deepcopy(dfin)
+#    
+#    dfout=dfin[dfSNR>thresh]
+#    dfout.replace(False,np.nan,inplace=True)
+#        
+#    return dfout
 
 def forceAspect(ax,aspect=1):
     im = ax.get_images()
@@ -304,7 +331,7 @@ def histplot1D(datain,**kwargs):
     
     if datatype is 'df':
         histvals=datain.values
-        binrange=kwargs.get('binrange',[min(datain.min()),max(datain.max())])
+        binrange=kwargs.get('binrange',[datain.min(),datain.max()])
     elif datatype is 'histdict':
         counts=datain['counts']
         edges=datain['edges']
@@ -391,8 +418,8 @@ def histplot1D(datain,**kwargs):
 
 def histplot2D(dfx,dfy,**kwargs):
     
-    xbinrange=kwargs.get('xbinrange',[min(dfx.min()),max(dfx.max())])
-    ybinrange=kwargs.get('ybinrange',[min(dfy.min()),max(dfy.max())])
+    xbinrange=kwargs.get('xbinrange',None)
+    ybinrange=kwargs.get('ybinrange',None)
     numbins=kwargs.get('numbins',[100,100])  
     missinglowval=kwargs.get('missinghighval',-99999)
     missinghighval=kwargs.get('missinglowval',99999)
@@ -412,9 +439,22 @@ def histplot2D(dfx,dfy,**kwargs):
     overcolor=kwargs.get('overcolor','b')
     logcolor=kwargs.get('logcolor',True)
     
-    xvalues=np.ravel(dfx.values)
-    yvalues=np.ravel(dfy.values)    
+    if len(np.shape(dfx))==1:
+        xvalues=dfxdropna().values
+    else:
+        xvalues=dfx.stack().dropna().values
+        
+    if len(np.shape(dfy))==1:
+        yvalues=dfydropna().values
+    else:
+        yvalues=dfy.stack().dropna().values
     
+    if xbinrange is None:
+        xbinrange=[min(xvalues),max(xvalues)]
+    
+    if ybinrange is None:
+        ybinrange=[min(yvalues),max(yvalues)]   
+        
     xycounts,xedges,yedges=np.histogram2d(xvalues,yvalues,numbins,range=[xbinrange,ybinrange])
     
     xstep=np.diff(xedges)
@@ -460,7 +500,7 @@ def histplot2D(dfx,dfy,**kwargs):
         axis.set_ylabel(ylabel)
     #    t2 = axis.set_title(title)
         fig.set_size_inches(figheight*ar,figheight) 
-        fig.tight_layout()
+#        fig.tight_layout()
     #    t2.set_y(1.02)
         fig.canvas.draw()
         if saveplot:

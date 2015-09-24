@@ -1,10 +1,20 @@
+import os,sys
 import numpy as np
 import pandas as pan
 from copy import deepcopy
 import random
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+font = {'family' : 'serif',
+        'weight' : 'medium',
+        'size'   : 22}
+
+plt.rc('font', **font)
+plt.rcParams['lines.linewidth']=2.0
 from itertools import groupby
 import operator
+import copy
+import pickle
 
 def std_atm(z):
     ########################################################################
@@ -298,10 +308,10 @@ def backandnoise(P_in,background = 0.0,stdev = 0.0,inplace=True):
     else:
         P_out=deepcopy(P_in)
     
-    if type(stdev)==float:
-        P_out['vals'] = [v+random.gauss(background,stdev) for v in P_out['vals']]
-    elif stdev:
+    if type(stdev)==pan.core.series.Series:
         P_out['vals'] = [v+random.gauss(background,s) for v,s in zip(P_out['vals'],stdev.values)]
+    elif stdev:
+        P_out['vals'] = [v+random.gauss(background,stdev) for v in P_out['vals']]
     else:
         P_out['vals'] = [v+random.gauss(background,s) for v,s in zip(P_out['vals'],np.sqrt(P_out['vals']))]
        
@@ -712,8 +722,12 @@ def klett2(P_in,lrat_in,**kwargs):
     sigma_m=sigma_R.loc[r_m]
     #add arbitrary translation before transformation to avoid negative numbers in log value
     #because inversion is based on the differential of dS/dr, this changes nothing in solution    
-    P_trans = P_new+0.001-np.min(P_new.values)
-    S=np.log(P_trans)
+    if np.min(P_new.values)<=0:
+        P_trans=P_new+(1e-8)-np.min(P_new.values)
+    else:
+        P_trans=P_new
+        
+    S=np.log(P_trans).fillna(method='pad')
     
     for alt in reversed(newalts):
         if alt == r_m: 
@@ -751,263 +765,542 @@ def klett2(P_in,lrat_in,**kwargs):
             old_delta_Sprime=delta_Sprime
     return beta,sigma
 
-def iterative_klett(P_in,lrat_p,**kwargs):
-    wave=kwargs.get('wave',532.0)
-    k=kwargs.get('k',1.0)
-    r_m=kwargs.get('r_m',None)
-    maxiter=kwargs.get('maxiter',20)
-    deltathresh=kwargs.get('deltathresh',0.1)
-    lrat_min=kwargs.get('lrat_min',0.0)
-    lrat_max=kwargs.get('lrat_max',100.0)
-    verbose=kwargs.get('verbose',False)
-    
-    alts=P_in.index
-    Pmol=molprof(z=alts,wave=wave)
-    beta_m=Pmol.beta_R
-    lrat_m=8.0*np.pi/3.0
-    
-    lrat_old=lrat_p.replace(0.0,lrat_m,inplace=False)
-    back_old,ext_old=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
-    n=0
-    while True:     
-        n+=1
-        
-        if verbose:
-            print "Iteration #{0}".format(n)
-        lrat_new=(lrat_m*beta_m+lrat_p*(back_old-beta_m)).div(back_old)
-        for i in lrat_new.index:
-            if lrat_new.ix[i]<lrat_min:
-                lrat_new.ix[i]=lrat_old.ix[i]
-            elif lrat_new.ix[i]>lrat_max:
-                lrat_new.ix[i]=lrat_max
-            elif lrat_old.ix[i]==lrat_m:
-                lrat_new.ix[i]=lrat_m
-        
-        back_new,ext_new=klett(P_in=P_in,lrat_in=lrat_new,r_m=r_m,k=k,wave=wave)
-        
-        delta_ext=abs(100.0*(ext_new-ext_old).div(ext_old))
-        back_old=back_new
-        ext_old=ext_new
-        lrat_old=lrat_new
-        
-        if n>=maxiter:
-            if verbose:
-                print 'Failed to converge after {0} Iterations'.format(n)
-            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
-            lrat_out=lrat_old
-            break
-        if delta_ext.max() <= deltathresh:
-            lrat_out=lrat_new
-            for i in lrat_new.index:
-                if lrat_new.ix[i]<lrat_min:
-                    lrat_out.ix[i]=lrat_old.ix[i]
-                elif lrat_new.ix[i]>lrat_max:
-                    lrat_out.ix[i]=lrat_max
-                elif lrat_old.ix[i]==lrat_m:
-                    lrat_out.ix[i]=lrat_m
-            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_out,r_m=r_m,k=k,wave=wave)
-                    
-            break
-    
-    return back_out,ext_out,lrat_out
+#def iterative_klett(P_in,lrat_p,**kwargs):
+#    wave=kwargs.get('wave',532.0)
+#    k=kwargs.get('k',1.0)
+#    r_m=kwargs.get('r_m',None)
+#    maxiter=kwargs.get('maxiter',20)
+#    deltathresh=kwargs.get('deltathresh',0.1)
+#    lrat_min=kwargs.get('lrat_min',0.0)
+#    lrat_max=kwargs.get('lrat_max',100.0)
+#    verbose=kwargs.get('verbose',False)
+#    
+#    alts=P_in.index
+#    Pmol=molprof(z=alts,wave=wave)
+#    beta_m=Pmol.beta_R
+#    lrat_m=8.0*np.pi/3.0
+#    
+#    lrat_old=lrat_p.replace(0.0,lrat_m,inplace=False)
+#    back_old,ext_old=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
+#    n=0
+#    while True:     
+#        n+=1
+#        
+#        if verbose:
+#            print "Iteration #{0}".format(n)
+#        lrat_new=(lrat_m*beta_m+lrat_p*(back_old-beta_m)).div(back_old)
+#        for i in lrat_new.index:
+#            if lrat_new.ix[i]<lrat_min:
+#                lrat_new.ix[i]=lrat_old.ix[i]
+#            elif lrat_new.ix[i]>lrat_max:
+#                lrat_new.ix[i]=lrat_max
+#            elif lrat_old.ix[i]==lrat_m:
+#                lrat_new.ix[i]=lrat_m
+#        
+#        back_new,ext_new=klett(P_in=P_in,lrat_in=lrat_new,r_m=r_m,k=k,wave=wave)
+#        
+#        delta_ext=abs(100.0*(ext_new-ext_old).div(ext_old))
+#        back_old=back_new
+#        ext_old=ext_new
+#        lrat_old=lrat_new
+#        
+#        if n>=maxiter:
+#            if verbose:
+#                print 'Failed to converge after {0} Iterations'.format(n)
+#            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_old,r_m=r_m,k=k,wave=wave)
+#            lrat_out=lrat_old
+#            break
+#        if delta_ext.max() <= deltathresh:
+#            lrat_out=lrat_new
+#            for i in lrat_new.index:
+#                if lrat_new.ix[i]<lrat_min:
+#                    lrat_out.ix[i]=lrat_old.ix[i]
+#                elif lrat_new.ix[i]>lrat_max:
+#                    lrat_out.ix[i]=lrat_max
+#                elif lrat_old.ix[i]==lrat_m:
+#                    lrat_out.ix[i]=lrat_m
+#            back_out,ext_out=klett(P_in=P_in,lrat_in=lrat_out,r_m=r_m,k=k,wave=wave)
+#                    
+#            break
+#    
+#    return back_out,ext_out,lrat_out
 
-def invert_profile(profin,lratin,**kwargs):
-    method=kwargs.get('method','klett2')
-    refalt=kwargs.get('refalt',profin.index[-1])
-    backscatter=pan.Series(np.nan,index=profin.index)
-    extinction=pan.Series(np.nan,index=profin.index)
-    
-    mollayers=lratin[lratin==0.0]
-    moledges=[]
-    altstep=lratin.index[1]-lratin.index[0]
-#    molcount=[int(round((x-mollayers.index[0])/altstep)) for x in mollayers.index]
-    
-    for key,alt in groupby(enumerate(mollayers.index),lambda (i,x):i-int(round((x-mollayers.index[0])/altstep))):
-        temprange=map(operator.itemgetter(1),alt)
-#        tempalts=[x*altstep+mollayers.index[0] for x in temprange]
-        moledges.append((temprange[0],temprange[-1]))
-    
-    alt=profin.index[-1]
-    if len(moledges)==0:
-        return backscatter,extinction
-    else:
-        tempedges=moledges.pop()        
-        while True:        
-            if tempedges[0]<alt<=tempedges[1]: 
-                layeralts=profin.ix[tempedges[0]:tempedges[1]].index.values
-                tempmol=molprof(z=layeralts)
-                backscatter.ix[layeralts]=tempmol['beta_R'].values
-                extinction.ix[layeralts]=tempmol['sigma_R'].values
-                alt=layeralts[0]
-            else:
-                try:
-                    tempedges=moledges.pop()
-                    layeralts=profin.ix[tempedges[1]:alt].index[1:]
-                    alt=tempedges[1]
-                except IndexError:
-                    layeralts=profin.ix[:alt].index
-                    alt=layeralts[0]
-                    
-                layerprof=profin.ix[layeralts]
-                layerlrat=lratin.ix[layeralts]
-    
-                if method=='klett2':
-                    tempback,tempext=klett2(layerprof,layerlrat,r_m=layeralts[-1])
-        
-                backscatter.ix[layeralts]=tempback.values
-                extinction.ix[layeralts]=tempext.values
-                
-            if alt-profin.index[0]<=altstep:
-                break
-        
-        return backscatter,extinction
+#def invert_profile(profin,lratin,**kwargs):
+#    method=kwargs.get('method','klett2')
+#    refalt=kwargs.get('refalt',profin.index[-1])
+#    backscatter=pan.Series(np.nan,index=profin.index)
+#    extinction=pan.Series(np.nan,index=profin.index)
+#    
+#    mollayers=lratin[lratin==0.0]
+#    moledges=[]
+#    altstep=lratin.index[1]-lratin.index[0]
+##    molcount=[int(round((x-mollayers.index[0])/altstep)) for x in mollayers.index]
+#    
+#    for key,alt in groupby(enumerate(mollayers.index),lambda (i,x):i-int(round((x-mollayers.index[0])/altstep))):
+#        temprange=map(operator.itemgetter(1),alt)
+##        tempalts=[x*altstep+mollayers.index[0] for x in temprange]
+#        moledges.append((temprange[0],temprange[-1]))
+#    
+#    alt=profin.index[-1]
+#    if len(moledges)==0:
+#        if methos=='klett2':
+#            backscatter,extinction=klett2(profin,lratin,r_m=refalt)
+#        return backscatter,extinction
+#    else:
+#        tempedges=moledges.pop()        
+#        while True:        
+#            if tempedges[0]<alt<=tempedges[1]: 
+#                layeralts=profin.ix[tempedges[0]:tempedges[1]].index.values
+#                tempmol=molprof(z=layeralts)
+#                backscatter.ix[layeralts]=tempmol['beta_R'].values
+#                extinction.ix[layeralts]=tempmol['sigma_R'].values
+#                alt=layeralts[0]
+#            else:
+#                try:
+#                    tempedges=moledges.pop()
+#                    layeralts=profin.ix[tempedges[1]:alt].index[1:]
+#                    alt=tempedges[1]
+#                except IndexError:
+#                    layeralts=profin.ix[:alt].index
+#                    alt=layeralts[0]
+#                    
+#                layerprof=profin.ix[layeralts]
+#                layerlrat=lratin.ix[layeralts]
+#    
+#                if method=='klett2':
+#                    tempback,tempext=klett2(layerprof,layerlrat,r_m=layeralts[-1])
+#        
+#                backscatter.ix[layeralts]=tempback.values
+#                extinction.ix[layeralts]=tempext.values
+#                
+#            if alt-profin.index[0]<=altstep:
+#                break
+#        
+#        return backscatter,extinction
 
-def kovalev(P_in,lrat_in,**kwargs):
-    wave=kwargs.get('wave',532.0)
-    threshval=kwargs.get('threshval',0.10)
-    iterthresh=kwargs.get('iterthresh',20)
-    divergethresh=kwargs.get('divergethresh',5)
-    verbose=kwargs.get('verbose',False)
-    
-    lrat_m=8.0*np.pi/3.0
-    alts=P_in.index
-    tempmol = molprof(z=alts,wave=wave)
-    sigma_m = tempmol['sigma_R']
-    
-    n=0
-    divergeflag=0
-    P_old=P_in
-    P_vals=pan.DataFrame(index=alts)
-    delta_vals=pan.DataFrame(index=alts)
-    sigma_vals=pan.DataFrame(index=alts)
-    while True:
-        #step 1: calculate I_r = integral of P_in from r_0 - r
-        oldalt=alts[0]
-        I_r = pan.Series(index=alts)
-        I_r.ix[oldalt]=0.0
-        for newalt in P_old.index[1:]:
-            I_r.ix[newalt]=I_r.ix[oldalt]+0.5*(P_old.ix[newalt]+P_old.ix[oldalt])*(newalt-oldalt)                        
-            oldalt=newalt
-        
-        I_max=I_r.iloc[-1]    
-        #step 2: assume R_b=0 and use eqn. 22 to find gamma_r    
-        gamma_r = 1.0-(2.0*I_max/(P_old.div(sigma_m)+2.0*I_r))
-    
-        #step 3: calculcate gamma_min from gamma_r and use eqn. 23 to calculate sigma_p
-        
-        gamma_min = gamma_r.min()
-        gamma_idxmin = gamma_r.idxmin() 
-        
-        denom=(I_max/(1-gamma_min))-I_r
-        sigma_p = 0.5*P_old.div(denom) - sigma_m
-        
-        #step 4: calculate Y_r using equation 14
-        
-        Y_r_num = sigma_m+sigma_p
-        Y_r_denom = sigma_m + lrat_in.div(lrat_m)*sigma_p
-        
-        Y_r = Y_r_num.div(Y_r_denom)
-        #step 5: nmormalize P_in by Y_r using eqn. 15
-        
-        P_new = P_in*Y_r
-        #step 6: recalculate fom step 1 until no difrferences between steps        
-        
-        delta_P = abs(100.0*(P_new-P_old).div(P_old))  #delta in percentage units
-        
-        
-        if delta_P.max() <= threshval:
-            extinction=sigma_p+sigma_m
-            backscatter=extinction.div(lrat_in)
-            flag=0
-            break
-        
-        if n>=1 and delta_P.mean()>= delta_P_old.mean():
-            divergeflag+=1
-        
-            if divergeflag>=divergethresh:
-                if verbose:
-                    print "Kovalev diverging error"
-                extinction=pan.Series(data=np.nan,index=P_in.index)
-                backscatter=pan.Series(data=np.nan,index=P_in.index)
-                flag=2
-                break
-            
-        P_old=P_new
-        delta_P_old=delta_P
-        n+=1  
-        
-        P_vals[n]=P_old
-        delta_vals[n]=delta_P_old
-        sigma_vals[n]=sigma_p
-        
-        if n>=iterthresh:
-            if verbose:
-                print 'Failed to converge after {0} iterations'.format(n)
-            extinction=sigma_p+sigma_m
-            backscatter=extinction.div(lrat_in)
-            flag=1
-            break
+#def kovalev(P_in,lrat_in,**kwargs):
+#    wave=kwargs.get('wave',532.0)
+#    threshval=kwargs.get('threshval',0.10)
+#    iterthresh=kwargs.get('iterthresh',20)
+#    divergethresh=kwargs.get('divergethresh',5)
+#    verbose=kwargs.get('verbose',False)
+#    
+#    lrat_m=8.0*np.pi/3.0
+#    alts=P_in.index
+#    tempmol = molprof(z=alts,wave=wave)
+#    sigma_m = tempmol['sigma_R']
+#    
+#    n=0
+#    divergeflag=0
+#    P_old=P_in
+#    P_vals=pan.DataFrame(index=alts)
+#    delta_vals=pan.DataFrame(index=alts)
+#    sigma_vals=pan.DataFrame(index=alts)
+#    while True:
+#        #step 1: calculate I_r = integral of P_in from r_0 - r
+#        oldalt=alts[0]
+#        I_r = pan.Series(index=alts)
+#        I_r.ix[oldalt]=0.0
+#        for newalt in P_old.index[1:]:
+#            I_r.ix[newalt]=I_r.ix[oldalt]+0.5*(P_old.ix[newalt]+P_old.ix[oldalt])*(newalt-oldalt)                        
+#            oldalt=newalt
+#        
+#        I_max=I_r.iloc[-1]    
+#        #step 2: assume R_b=0 and use eqn. 22 to find gamma_r    
+#        gamma_r = 1.0-(2.0*I_max/(P_old.div(sigma_m)+2.0*I_r))
+#    
+#        #step 3: calculcate gamma_min from gamma_r and use eqn. 23 to calculate sigma_p
+#        
+#        gamma_min = gamma_r.min()
+#        gamma_idxmin = gamma_r.idxmin() 
+#        
+#        denom=(I_max/(1-gamma_min))-I_r
+#        sigma_p = 0.5*P_old.div(denom) - sigma_m
+#        
+#        #step 4: calculate Y_r using equation 14
+#        
+#        Y_r_num = sigma_m+sigma_p
+#        Y_r_denom = sigma_m + lrat_in.div(lrat_m)*sigma_p
+#        
+#        Y_r = Y_r_num.div(Y_r_denom)
+#        #step 5: nmormalize P_in by Y_r using eqn. 15
+#        
+#        P_new = P_in*Y_r
+#        #step 6: recalculate fom step 1 until no difrferences between steps        
+#        
+#        delta_P = abs(100.0*(P_new-P_old).div(P_old))  #delta in percentage units
+#        
+#        
+#        if delta_P.max() <= threshval:
+#            extinction=sigma_p+sigma_m
+#            backscatter=extinction.div(lrat_in)
+#            flag=0
+#            break
+#        
+#        if n>=1 and delta_P.mean()>= delta_P_old.mean():
+#            divergeflag+=1
+#        
+#            if divergeflag>=divergethresh:
+#                if verbose:
+#                    print "Kovalev diverging error"
+#                extinction=pan.Series(data=np.nan,index=P_in.index)
+#                backscatter=pan.Series(data=np.nan,index=P_in.index)
+#                flag=2
+#                break
+#            
+#        P_old=P_new
+#        delta_P_old=delta_P
+#        n+=1  
+#        
+#        P_vals[n]=P_old
+#        delta_vals[n]=delta_P_old
+#        sigma_vals[n]=sigma_p
+#        
+#        if n>=iterthresh:
+#            if verbose:
+#                print 'Failed to converge after {0} iterations'.format(n)
+#            extinction=sigma_p+sigma_m
+#            backscatter=extinction.div(lrat_in)
+#            flag=1
+#            break
+#
+#    P_vals.plot()
+#    delta_vals.plot()
+#    sigma_vals.plot()    
+#    return backscatter,extinction,flag
 
-    P_vals.plot()
-    delta_vals.plot()
-    sigma_vals.plot()    
-    return backscatter,extinction,flag
-    
-    
-def lrat_tester_full(P_0,**kwargs):
+def lrat_tester_noise(z,**kwargs):
+    background=kwargs.get('background',0.0)
+    betalist=kwargs.get('beta',[1e-6])
+    altlist=kwargs.get('alt',[10])
+    lratlist=kwargs.get('lratlist',[30])
+    layerwidth=kwargs.get('layerwidth',1.0)
+    noise=kwargs.get('noise',[0.0])
     wave=kwargs.get('wave',532.0)
     E0=kwargs.get('E0',1.0)
-    method=kwargs.get('method','klett2')
-    lrat_klett=kwargs.get('lrat_klett',np.arange(.50,1.55,.5))
-    lrat_fern=kwargs.get('lrat_fern',np.arange(15,80))
-    calrange_fern=kwargs.get('calrange_fern',None)
-    r_m=kwargs.get('r_m',[])
+    lrat_testrange=kwargs.get('lrat_testrange',np.arange(-.50,1.55,.05))
+    r_m=kwargs.get('r_m',None)
     k=kwargs.get('k',1.0)
+    verbose=kwargs.get('verbose',True)
+    layeronly=kwargs.get('layeronly',True)
+    plotall=kwargs.get('plotall',True)
+    figlib=kwargs.get('figlib','./Figures')
+    saveall=kwargs.get('saveall',False)
+    proclib=kwargs.get('proclib','./Processed')
     
-    if method=='fernald':
-        beta_out=pan.DataFrame(index=P_0.index,columns=lrat_fern)
-        sigma_out=pan.DataFrame(index=P_0.index,columns=lrat_fern)
-        deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_fern)
-        deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_fern)
-        for lrat in lrat_fern:
-            beta_out[lrat],sigma_out[lrat]=fernald(P_0['NRB'], lrat, wave=wave, E=E0, calrange=calrange_fern)
-            deltabeta[lrat]=100.0*(P_0['beta_t']-beta_out[lrat])/P_0['beta_t']
-            deltasigma[lrat]=100.0*(P_0['sigma_t']-sigma_out[lrat])/P_0['sigma_t']
-    elif method=='klett':
-        beta_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        sigma_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        lratprof=P_0['sigma_t']/P_0['beta_t'] 
-        lratprof.fillna(value=8.0*np.pi/3.0,inplace=True)
-        if not r_m:
-            r_m=P_0.index.values[-1]    
-        for tempdelt in lrat_klett:
-            lrattemp=lratprof*tempdelt
-            beta_out[tempdelt],sigma_out[tempdelt]=klett(P_in=P_0['NRB'],lrat_in=lrattemp,
-                                                            r_m=r_m,k=k,wave=wave)
-            deltabeta[tempdelt]=100.0*(P_0['beta_t']-beta_out[tempdelt])/P_0['beta_t']
-            deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
-    elif method=='klett2':
-        beta_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        sigma_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_klett)
-        lratprof=P_0['sigma_p']/P_0['beta_p']         
-        lratprof.fillna(value=0.0,inplace=True)
-        if not r_m:
-            r_m=P_0.index.values[-1]
+    lrat_m = 8.0*np.pi/3.0
+                                                           
+    repnum=1 
+    indexlist=[]
+    namelist=[]
+    for vals,names in zip([noise,lrat_testrange],['Noise','Lidar Ratio Error']):
+        if len(vals)>1:
+            indexlist.append(vals)
+            namelist.append(names)
+    
+    if not indexlist:
+        lratcalc=pan.Series(index=z)
+        betacalc=pan.Series(index=z)
+        sigmacalc=pan.Series(index=z)
+        deltalrat=pan.Series(index=z)
+        deltabeta=pan.Series(index=z)
+        deltasigma=pan.Series(index=z)
+    else:
+        index=pan.MultiIndex.from_product(indexlist,names=namelist)
+        lratcalc=pan.DataFrame(index=z,columns=index)
+        betacalc=pan.DataFrame(index=z,columns=index)
+        sigmacalc=pan.DataFrame(index=z,columns=index)
+        deltalrat=pan.DataFrame(index=z,columns=index)
+        deltabeta=pan.DataFrame(index=z,columns=index)
+        deltasigma=pan.DataFrame(index=z,columns=index)
+    totreps=len(noise)*len(lrat_testrange)  
+    repnum=1 
+                                         
+    for nval in noise:
+        testlayer=[]
+        for beta,lrat,alt in zip(betalist,lratlist,altlist):
+            templayer=pan.Series(data=beta,index=[alt,alt+layerwidth])
+            templayer={'beta_p':templayer,'lrat':lrat}
+            testlayer.append(templayer)
+        P_0=profgen(z,layers=testlayer,background=background,noise=nval,wave=wave,E0=E0)
+        P_temp=P_0['NRB']
+        lratprof=P_0['sigma_t'].div(P_0['beta_t'])
+        lrat0=pan.Series(data=lratprof,index=z)
+        beta0=pan.Series(data=P_0['beta_t'],index=z)
+        sigma0=pan.Series(data=P_0['sigma_t'],index=z)
+                    
+        for lrat_multiplier in lrat_testrange: 
+            if verbose:
+                print 'Processing step {0} out of {1}'.format(repnum,totreps)
+            repnum+=1
+            if layeronly:
+                lrattemp=pan.Series(data=lrat0.values,index=z)
+                for alt in altlist:
+                    lrattemp.ix[alt:alt+layerwidth]=lrattemp.ix[alt:alt+layerwidth]*(1.0+lrat_multiplier)
+            else:
+                lrattemp=lrat0*(1.0+lrat_multiplier)
+            betatemp,sigmatemp=klett2(P_in=P_temp,lrat_in=lrattemp,r_m=r_m,k=k)
+            deltabetatemp=100.0*(betatemp-P_0['beta_t'])/P_0['beta_t']
+            deltasigmatemp=100.0*(sigmatemp-P_0['sigma_t'])/P_0['sigma_t']
+            deltalrattemp=100.0*(lrattemp-lratprof)/lratprof
+            
+            indexer=tuple([ival for ival,iist in zip([nval,lrat_multiplier],[noise,lrat_testrange]) if len(indexlist)>1])
+            
+            if not indexer:
+                lratcalc.loc[:]=lrattemp
+                betacalc.loc[:]=betatemp
+                sigmacalc.loc[:]=sigmatemp
+                deltalrat.loc[:]=deltalrattemp
+                deltabeta.loc[:]=deltabetatemp
+                deltasigma.loc[:]=deltasigmatemp                
+            else:
+                lratcalc.loc[:,indexer]=lrattemp
+                betacalc.loc[:,indexer]=betatemp
+                sigmacalc.loc[:,indexer]=sigmatemp
+                deltalrat.loc[:,indexer]=deltalrattemp
+                deltabeta.loc[:,indexer]=deltabetatemp
+                deltasigma.loc[:,indexer]=deltasigmatemp
+                
+            if plotall:
+                fig=plt.figure()
+                ax=fig.add_subplot(111)
+                plt.xlabel('Altitude [km]')
+                plt.ylabel('Percent Error')
+                fmt = '%.0f%%' # Format you want the ticks, e.g. '40%'
+                yticks = mtick.FormatStrFormatter(fmt)
+                ax.yaxis.set_major_formatter(yticks)
+                deltasigma.columns.name='Lidar Ratio Error'
+                for col in deltasigma.columns:
+                    ax.plot(deltasigma.index,deltasigma[col],label='{0}%'.format(col*100))
+                plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.,title='Lidar Ratio Error')
+                fig.savefig(os.path.join(figlib,'Deltasigma{0}{1}{2}.png'.format(np.log10(beta),alt,lrat)),
+                            bbox_inches='tight')
+                plt.close()
+                
+                fig=plt.figure()
+                ax=fig.add_subplot(111)
+                plt.xlabel('Altitude [km]')
+                plt.ylabel('Percent Error')
+                fmt = '%.0f%%' # Format you want the ticks, e.g. '40%'
+                yticks = mtick.FormatStrFormatter(fmt)
+                ax.yaxis.set_major_formatter(yticks)
+                deltasigma.columns.name='Lidar Ratio Error'
+                for col in deltabeta.columns:
+                    ax.plot(deltabeta.index,deltabeta[col],label='{0}%'.format(col*100))
+                plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.,title='Lidar Ratio Error')
+                fig.savefig(os.path.join(figlib,'Deltabeta{0}{1}{2}.png'.format(np.log10(beta),alt,lrat)),
+                            bbox_inches='tight')
+                plt.close()
+                                           
+    beta_comp={'beta0':beta0,'betacalc':betacalc,'deltabeta':deltabeta}
+    sigma_comp={'sigma0':sigma0,'sigmacalc':sigmacalc,'deltasigma':deltasigma}
+    lrat_comp={'lrat0':lrat0,'lratcalc':lratcalc,'deltalrat':deltalrat}
+    if saveall:
+        pickle.dump(beta_comp,open(os.path.join(proclib,'testdat_beta.p','wb')))
+        pickle.dump(sigma_comp,open(os.path.join(proclib,'testdat_sigma.p','wb')))
+        pickle.dump(lrat_comp,open(os.path.join(proclib,'testdat_lrat.p','wb')))   
+    
+    return beta_comp,sigma_comp,lrat_comp
+    
+def lrat_tester_full(z,beta_list,alt_list,lrat_list,**kwargs):
+    background=kwargs.get('background',0.0)
+    layerwidth=kwargs.get('layerwidth',1.0)
+    noise=kwargs.get('noise',0.0)
+    wave=kwargs.get('wave',532.0)
+    E0=kwargs.get('E0',1.0)
+    method=kwargs.get('method','range')
+    lrat_testrange=kwargs.get('lrat_testrange',np.arange(-.50,1.55,.05))
+    numiter=kwargs.get('numiter',10)
+    r_m=kwargs.get('r_m',None)
+    k=kwargs.get('k',1.0)
+    verbose=kwargs.get('verbose',True)
+    layeronly=kwargs.get('layeronly',True)
+    plotall=kwargs.get('plotall',True)
+    figlib=kwargs.get('figlib','./Figures')
+    saveall=kwargs.get('saveall',False)
+    proclib=kwargs.get('proclib','./Processed')
+    
+    lrat_m = 8.0*np.pi/3.0
+                                                           
+    repnum=1 
+    beta0_all=[]#np.empty([len(beta_list),len(alt_list),len(lrat_list)]) 
+    sigma0_all=[]#np.empty_like(beta0_all)
+    lrat0_all=[]#np.empty_like(beta0_all)
+    beta_calc_all=[]#np.empty_like(beta0_all)
+    sigma_calc_all=[]#np.empty_like(beta0_all)
+    lrat_calc_all=[]#np.empty_like(beta0_all)
+    delta_beta_all=[]#np.empty_like(beta0_all)
+    delta_sigma_all=[]#np.empty_like(beta0_all)
+    delta_lrat_all=[]#np.empty_like(beta0_all)  
+    
 
-        for tempdelt in lrat_klett:
-            lrattemp=lratprof*tempdelt
-            beta_out[tempdelt],sigma_out[tempdelt]=klett2(P_in=P_0['NRB'],lrat_in=lrattemp,r_m=r_m)
-            deltabeta[tempdelt]=100.0*(P_0['beta_t']-beta_out[tempdelt])/P_0['beta_t']
-            deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
+    totreps=len(beta_list)*len(alt_list)*len(lrat_list)*len(lrat_testrange)  
+    repnum=1                                          
+    for beta in beta_list:
+        outaltbeta0=[]
+        outaltsigma0=[]
+        outaltlrat0=[]
+        outaltbetacalc=[]
+        outaltsigmacalc=[]
+        outaltlratcalc=[]
+        outaltdeltabeta=[]
+        outaltdeltasigma=[]
+        outaltdeltalrat=[]
+        for alt in alt_list:
+            outlratbeta0=[]
+            outlratsigma0=[]
+            outlratlrat0=[]
+            outlratbetacalc=[]
+            outlratsigmacalc=[]
+            outlratlratcalc=[]
+            outlratdeltabeta=[]
+            outlratdeltasigma=[]
+            outlratdeltalrat=[]
+            for lrat in lrat_list:
+                layer=pan.Series(data=beta,index=[alt,alt+layerwidth])
+                testlayer={'beta_p':layer,'lrat':lrat}
+                P_0=profgen(z,layers=[testlayer],background=background,noise=noise,wave=wave,E0=E0)
+                P_temp=P_0['NRB']
+                lratprof=P_0['sigma_t'].div(P_0['beta_t'])
+                lrat0=pan.Series(data=lratprof,index=z)
+                beta0=pan.Series(data=P_0['beta_t'],index=z)
+                sigma0=pan.Series(data=P_0['sigma_t'],index=z)
+                if method=='range':
+                    lratcalc=pan.DataFrame(index=z,columns=lrat_testrange)
+                    betacalc=pan.DataFrame(index=z,columns=lrat_testrange)
+                    sigmacalc=pan.DataFrame(index=z,columns=lrat_testrange)
+                    deltalrat=pan.DataFrame(index=z,columns=lrat_testrange)
+                    deltabeta=pan.DataFrame(index=z,columns=lrat_testrange)
+                    deltasigma=pan.DataFrame(index=z,columns=lrat_testrange)
+                    
+                    for lrat_multiplier in lrat_testrange: 
+                        if verbose:
+                            print 'Processing step {0} out of {1}'.format(repnum,totreps)
+                        repnum+=1
+                        if layeronly:
+                            lrattemp=pan.Series(data=lrat0.values,index=z)
+                            lrattemp.ix[alt:alt+layerwidth]=lrattemp.ix[alt:alt+layerwidth]*(1.0+lrat_multiplier)
+                        else:
+                            lrattemp=lrat0*(1.0+lrat_multiplier)
+                        betatemp,sigmatemp=klett2(P_in=P_temp,lrat_in=lrattemp,r_m=r_m,k=k)
+                        deltabetatemp=100.0*(betatemp-P_0['beta_t'])/P_0['beta_t']
+                        deltasigmatemp=100.0*(sigmatemp-P_0['sigma_t'])/P_0['sigma_t']
+                        deltalrattemp=100.0*(lrattemp-lratprof)/lratprof
+                        
+                        lratcalc.loc[:,lrat_multiplier]=lrattemp
+                        betacalc.loc[:,lrat_multiplier]=betatemp
+                        sigmacalc.loc[:,lrat_multiplier]=sigmatemp
+                        deltalrat.loc[:,lrat_multiplier]=deltalrattemp
+                        deltabeta.loc[:,lrat_multiplier]=deltabetatemp
+                        deltasigma.loc[:,lrat_multiplier]=deltasigmatemp
+                        
+                elif method=='assigned':
+                    if verbose:
+                        print 'Processing step {0} out of {1}'.format(repnum,totreps)
+                    repnum+=1
+                    lratcalc=pan.Series(data=lrat_m,index=z)
+                    lratcalc.ix[alt:alt+layerwidth]=lrat
+                    betacalc,sigmacalc=klett2(P_in=P_temp,lrat_in=lratcalc,r_m=r_m,k=k)
+                    deltabeta=100.0*(betacalc-P_0['beta_t'])/P_0['beta_t']
+                    deltasigma=100.0*(sigmacalc-P_0['sigma_t'])/P_0['sigma_t']
+                    deltalrat=100.0*(lratcalc-lratprof)/lratprof
+                
+                if plotall:
+                    fig=plt.figure()
+                    ax=fig.add_subplot(111)
+                    plt.xlabel('Altitude [km]')
+                    plt.ylabel('Percent Error')
+                    fmt = '%.0f%%' # Format you want the ticks, e.g. '40%'
+                    yticks = mtick.FormatStrFormatter(fmt)
+                    ax.yaxis.set_major_formatter(yticks)
+                    deltasigma.columns.name='Lidar Ratio Error'
+                    for col in deltasigma.columns:
+                        ax.plot(deltasigma.index,deltasigma[col],label='{0}%'.format(col*100))
+                    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.,title='Lidar Ratio Error')
+                    fig.savefig(os.path.join(figlib,'Deltasigma{0}{1}{2}.png'.format(np.log10(beta),alt,lrat)),
+                                bbox_inches='tight')
+                    plt.close()
+                    
+                    fig=plt.figure()
+                    ax=fig.add_subplot(111)
+                    plt.xlabel('Altitude [km]')
+                    plt.ylabel('Percent Error')
+                    fmt = '%.0f%%' # Format you want the ticks, e.g. '40%'
+                    yticks = mtick.FormatStrFormatter(fmt)
+                    ax.yaxis.set_major_formatter(yticks)
+                    deltasigma.columns.name='Lidar Ratio Error'
+                    for col in deltabeta.columns:
+                        ax.plot(deltabeta.index,deltabeta[col],label='{0}%'.format(col*100))
+                    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.,title='Lidar Ratio Error')
+                    fig.savefig(os.path.join(figlib,'Deltabeta{0}{1}{2}.png'.format(np.log10(beta),alt,lrat)),
+                                bbox_inches='tight')
+                    plt.close()
+                                   
+                if saveall:
+                    outlratbeta0.append(beta0)
+                    outlratsigma0.append(sigma0)
+                    outlratlrat0.append(lrat0)
+                    outlratbetacalc.append(betacalc)
+                    outlratsigmacalc.append(sigmacalc)
+                    outlratlratcalc.append(lratcalc)
+                    outlratdeltabeta.append(deltabeta)
+                    outlratdeltasigma.append(deltasigma)
+                    outlratdeltalrat.append(deltalrat)
+            if saveall:
+                outaltbeta0.append(outlratbeta0)
+                outaltsigma0.append(outlratsigma0)
+                outaltlrat0.append(outlratlrat0)
+                outaltbetacalc.append(outlratbetacalc)
+                outaltsigmacalc.append(outlratsigmacalc)
+                outaltlratcalc.append(outlratlratcalc)
+                outaltdeltabeta.append(outlratdeltabeta)
+                outaltdeltasigma.append(outlratdeltasigma)
+                outaltdeltalrat.append(outlratdeltalrat)
+        if saveall:
+            beta0_all.append(outaltbeta0)
+            sigma0_all.append(outaltsigma0)
+            lrat0_all.append(outaltlrat0)
+            beta_calc_all.append(outaltbetacalc)
+            sigma_calc_all.append(outaltsigmacalc)
+            lrat_calc_all.append(outaltlratcalc)
+            delta_beta_all.append(outaltdeltabeta)
+            delta_sigma_all.append(outaltdeltasigma)
+            delta_lrat_all.append(outaltdeltalrat)            
     
-    panelout=pan.Panel({'beta_calc':beta_out,'sigma_calc':sigma_out,'delta_beta':deltabeta,
-                        'delta_sigma':deltasigma})
-    
-    return panelout
+    if saveall:
+        beta_comp=[beta0_all,beta_calc_all,delta_beta_all]
+        sigma_comp=[sigma0_all,sigma_calc_all,delta_sigma_all]
+        lrat_comp=[lrat0_all,lrat_calc_all,delta_lrat_all]
+        
+        pickle.dump(beta_comp,open(os.path.join(proclib,'testdat_beta.p','wb')))
+        pickle.dump(sigma_comp,open(os.path.join(proclib,'testdat_sigma.p','wb')))
+        pickle.dump(lrat_comp,open(os.path.join(proclib,'testdat_lrat.p','wb')))
+    #may expand to other methods at some future date
+    #    if method=='fernald':
+#        beta_out=pan.DataFrame(index=P_0.index,columns=lrat_fern)
+#        sigma_out=pan.DataFrame(index=P_0.index,columns=lrat_fern)
+#        deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_fern)
+#        deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_fern)
+#        for lrat in lrat_fern:
+#            beta_out[lrat],sigma_out[lrat]=fernald(P_0['NRB'], lrat, wave=wave, E=E0, calrange=calrange_fern)
+#            deltabeta[lrat]=100.0*(P_0['beta_t']-beta_out[lrat])/P_0['beta_t']
+#            deltasigma[lrat]=100.0*(P_0['sigma_t']-sigma_out[lrat])/P_0['sigma_t']
+#    elif method=='klett':
+#        beta_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
+#        sigma_out=pan.DataFrame(index=P_0.index,columns=lrat_klett)
+#        deltabeta=pan.DataFrame(index=P_0.index,columns=lrat_klett)
+#        deltasigma=pan.DataFrame(index=P_0.index,columns=lrat_klett)
+#        lratprof=P_0['sigma_t']/P_0['beta_t'] 
+#        lratprof.fillna(value=8.0*np.pi/3.0,inplace=True)
+#        if not r_m:
+#            r_m=P_0.index.values[-1]    
+#        for tempdelt in lrat_klett:
+#            lrattemp=lratprof*tempdelt
+#            beta_out[tempdelt],sigma_out[tempdelt]=klett(P_in=P_0['NRB'],lrat_in=lrattemp,
+#                                                            r_m=r_m,k=k,wave=wave)
+#            deltabeta[tempdelt]=100.0*(P_0['beta_t']-beta_out[tempdelt])/P_0['beta_t']
+#            deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
+#    return data_out
 
 def lrat_tester_quick(P_0,**kwargs):
     wave=kwargs.get('wave',532.0)
@@ -1101,145 +1394,163 @@ def profile_input_tester(beta_list=[],alt_list=[],lrat_list=[]):
                 print "Completed run {0} out of {1}".format(n,total)
     
     return betapanel,sigmapanel
+
+def MCtest(z,numruns=100,testmethod=lrat_tester_noise,**runkwargs):
+    
+    betacalcout=pan.DataFrame(columns=range(numruns))
+    deltabetaout=pan.DataFrame(columns=range(numruns))
+    sigmacalcout=pan.DataFrame(columns=range(numruns))
+    deltasigmaout=pan.DataFrame(columns=range(numruns))
+    
+    for r in range(numruns):
+        print "Calculating run {0} of {1}".format(r+1,numruns)
+        beta_comp,sigma_comp,lrat_comp=testmethod(z,**runkwargs)
+        betacalcout.loc[:,r]=beta_comp['betacalc']
+        deltabetaout.loc[:,r]=beta_comp['deltabeta']
+        
+        sigmacalcout.loc[:,r]=sigma_comp['sigmacalc']
+        deltasigmaout.loc[:,r]=sigma_comp['deltasigma']
+        
+    betameanout=betacalcout.mean(1)
+    betastdout=betacalcout.std(1)
+    deltabetameanout=deltabetaout.mean(1)
+    deltabetastdout=deltabetaout.std(1)
+
+    sigmameanout=sigmacalcout.mean(1)
+    sigmastdout=sigmacalcout.std(1) 
+    deltasigmameanout=deltasigmaout.mean(1)
+    deltasigmastdout=deltasigmaout.std(1)
+   
+    betastats={'betamean':betameanout,'betastd':betastdout,
+               'deltabetamean':deltabetameanout,'deltabetastd':deltabetastdout}     
+    sigmastats={'sigmamean':sigmameanout,'sigmastd':sigmastdout,
+                'deltasigmamean':deltasigmameanout,'deltasigmastd':deltasigmastdout} 
+    
+    return betastats,sigmastats
     
 if __name__ == '__main__':
 
-    z = np.arange(0.150,15.000,0.03,dtype='float')
+    z = np.arange(0.150,15.000,0.15,dtype='float')
     E0=1.0 
-    background = 1e-6
-    noise=0.0
-    beta_list=[1.0*10**-exp for exp in range(0,8)]
-    alt_list=np.arange(0.750,13.750,0.500)
-    lrat_list=np.arange(15.0,80.0,5.0)
-    lrat_testrange=[0.5]
+    background = 0.0
+    noiserange=[2e-8]#np.arange(2e-8,12e-8,2e-8)
+    layerwidth=3.0
+    layeronly=True
+    betalist=[0]#[1.0*10**-exp for exp in np.arange(3,8,1)]
+    altlist=[10.0]#np.arange(11.750,13.750,1.000)
+    lratlist=[30]#np.arange(15.0,65.0,10.0)
     
-    beta_layer1=pan.Series(data=1e-3, index=[0.500,1.500])
-    beta_layer2=pan.Series(data=1e-4, index=[12.500,14.500])
-    layer1={'beta_p':beta_layer1,'lrat':35}
-    layer2={'beta_p':beta_layer2,'lrat':65}
-    P_0=profgen(z,layers=[layer1,layer2],background=background,noise=noise)
+    lrat_testrange=[0]#np.arange(-0.4,1.2,0.2)
+    interval=[3,6,9,12]
     
-    P_in=P_0.rsq 
-    beta_m=P_0.beta_R
-    lrat_m=8.0*np.pi/3.0
-    lrat_p=P_0.sigma_p.div(P_0.beta_p).fillna(0.0)
-    lrat0=P_0.sigma_p.div(P_0.beta_p).fillna(lrat_m)
+#    beta_layer1=pan.Series(data=1e-3, index=[0.500,1.500])
+#    beta_layer2=pan.Series(data=1e-4, index=[12.500,14.500])
+#    layer1={'beta_p':beta_layer1,'lrat':35}
+#    layer2={'beta_p':beta_layer2,'lrat':65}
+#    P_0=profgen(z,layers=[layer1,layer2],background=background,noise=noise)
+#    
+#    P_in=P_0.rsq 
+#    beta_m=P_0.beta_R
+#    lrat_m=8.0*np.pi/3.0
+#    lrat_p=P_0.sigma_p.div(P_0.beta_p).fillna(0.0)
+#    lrat0=P_0.sigma_p.div(P_0.beta_p).fillna(lrat_m)
+#    
+#    back,ext=klett2(P_in,lrat0,verbose=True)
     
-#    back,ext,flag=kovalev(P_in,lrat_in,verbose=True)
-    back,ext=iterative_klett(P_in,lrat_p,verbose=True)
+#    testpan=lrat_tester_full(P_0,lrat_klett=np.arange(0.5,1.6,0.1))
+#    if sys.platform=='win32':
+#        os.chdir('K:\All_MPL_Stats')
+#    else:
+#        os.chdir('/data/lv1/pcottle/MPLStats/')
+        
+#    beta_comp,sigma_comp,lrat_comp=lrat_tester_noise(z,background=background,layerwidth=layerwidth,
+#                                                     betalist=betalist,altlist=altlist,lratlist=lratlist,
+#                                                     noise=noiserange,lrat_testrange=lrat_testrange,
+#                                                     plotall=False)
     
-#    testpan=lrat_tester_full(P_0,lrat_klett=[1.0])
-                
-#    beta_fern = fernald(P_1,30,wave,1.0)
-#    sigma_fern=beta_fern*lrat_p1
-#    
-#    #Klett's lrat is the inverse of Fernald's
-#    
-#    lrat = P_1.loc['sigma_t']/P_1.loc['beta_t']
-#    
-#    lrat_klett=P_1.loc['sigma_p']/P_1.loc['beta_p'] #klett2 takes only particulte lrat
-#    lrat_klett.fillna(0,inplace=True)
-#    
-#    r_m = z[-2]
-#    
-#    sigma_m = P_mol.loc['sigma_R'].loc[r_m]
-#    beta_klett, sigma_klett = klett(p_norm1,lrat,r_m,sigma_m)
-#    beta_klett2 = klett2(p_norm1,lrat_klett,r_m=r_m)
-#    sigma_klett2 = beta_klett2*lrat_klett    
-#    
-#    delta_fern=(beta_fern-P_1.loc['beta_t'])/P_1.loc['beta_t']
-#    delta_klett=(beta_klett-P_1.loc['beta_t'])/P_1.loc['beta_t']
-#    delta_klett2=(beta_klett2-P_1.loc['beta_t'])/P_1.loc['beta_t']
-#    betakeys=['Data','Fernald','Klett','Klett2']
-#    deltakeys=['Fernald','Klett','Klett2']
-#    betadict=dict(zip(betakeys,[P_1.loc['beta_t'],beta_fern,beta_klett,beta_klett2]))
-#    deltadict=dict(zip(deltakeys,[delta_fern,delta_klett,delta_klett2]))
-#    sigmadict=dict(zip(betakeys,[P_1.loc['sigma_t'],sigma_fern,sigma_klett,sigma_klett2]))
-#    df_beta=pan.DataFrame.from_dict(betadict)
-#    df_delta=pan.DataFrame.from_dict(deltadict)
-#    df_sigma=pan.DataFrame(sigmadict)
     
-#    prat = p_rangecor1/p_rangecor0
-#    
-#    p_slope0 = calc_slope(p_rangecor0)    
-#    p_slope1 = calc_slope(p_rangecor1)    
-#    prat_slope = calc_slope(prat)
+    noiseindex=pan.Index(noiserange,name='Noise Level')
+    df_betamean=pan.DataFrame(index=z,columns=noiseindex)
+    df_betastd=pan.DataFrame(index=interval,columns=noiseindex)
+    df_deltabetamean=pan.DataFrame(index=z,columns=noiseindex)
+    df_deltabetastd=pan.DataFrame(index=interval,columns=noiseindex)
+    
+    df_sigmamean=pan.DataFrame(index=z,columns=noiseindex)
+    df_sigmastd=pan.DataFrame(index=interval,columns=noiseindex)
+    df_deltasigmamean=pan.DataFrame(index=z,columns=noiseindex)
+    df_deltasigmastd=pan.DataFrame(index=interval,columns=noiseindex)
 
-#    fig1 = plt.figure()
-#    ax1 = fig1.add_subplot(1,3,1)
-#    ax1.plot(P_mol.loc['Temp'],z)
-#    ax1.set_xlabel('Temperature [K]')
-#    ax1.set_ylabel('Height [m]')
-#
-#    ax2 = fig1.add_subplot(1,3,2)
-#    ax2.plot(P_mol.loc['Press'],z)
-#    ax2.set_xlabel('Pressure [Pa]')
-#
-#    ax3 = fig1.add_subplot(1,3,3)
-#    ax3.plot(P_mol.loc['Density'],z)
-#    ax3.set_xlabel('Density [kg/m^3]')
-#
-#    fig2 = plt.figure()
-#    ax1 = fig2.add_subplot(1,3,1)
-#    ax1.plot(p_norm1,z,p_norm0,z)
-#    ax1.set_xscale('log')
-#    ax1.set_xlabel('Range corrected signal multiplier')
-#    ax1.set_ylabel('Height [m]')
-#
-#    ax2 = fig2.add_subplot(1,3,2)
-#    ax2.plot((P_1.loc['beta_R']+P_1.loc['beta_p']),z)
-#    ax2.set_xlabel('Total backscatter coefficient [1/m/sr')
-#
-#    ax3 = fig2.add_subplot(1,3,3)
-#    ax3.plot((P_1.loc['sigma_R']+P_1.loc['sigma_p']),z)
-#    ax3.set_xlabel('Total extinction coefficient [1/m')
-#    
-#    fig3 = plt.figure()
-#    ax1 = fig3.add_subplot(1,3,1)
-#    ax1.plot(p_norm1,z,p_noisy,z)
-#    ax1.set_xscale('log')
-#    ax1.set_xlabel('Range corrected signal multiplier')
-#    ax1.set_ylabel('Height [m]')
-#
-#    ax2 = fig3.add_subplot(1,3,2)
-#    ax2.plot((P_1.loc['beta_p']/P_1.loc['beta_R']),z)
-#    ax2.set_xlabel('Attenuated Backscatter Ratio [beta_P/beta_R]')
-#
-#    ax3 = fig3.add_subplot(1,3,3)
-#    ax3.plot((P_1.loc['sigma_p']),z)
-#    ax3.set_xlabel('Total extinction coefficient [1/m')
-#    
-#    fig4 = plt.figure()
-#    ax1 = fig4.add_subplot(1,3,1)
-#    ax1.plot(prat,z)
-#    ax1.set_xlabel('Signal ratio')
-#    ax1.set_ylabel('Height [m]')
-#
-#    ax2 = fig4.add_subplot(1,3,2)
-#    ax2.plot(p_slope0,z)
-#    ax2.set_xlabel('Backscatter Slope')
-#    
-#    ax3 = fig4.add_subplot(1,3,3)
-#    ax3.plot(p_slope1,z)
-#    ax3.set_xlabel('Backscat Rat Slope')    
-    
-#    fig5 = plt.figure()
-#    ax1 = fig5.add_subplot(1,2,1)
-#    ax1.plot(((P_1.loc['beta_t'].values-beta_klett.values)/P_1.loc['beta_t'].values),z)
-#    ax1.set_xlabel('Delta Beta [%]')
-#    ax1.set_ylabel('Altitude')
-#    
-#    ax2 = fig5.add_subplot(1,2,2)
-#    ax2.plot(beta_klett.values,z,P_1.loc['beta_t'].values,z)
-#    ax2.set_xlabel('Original (green) and Klett (blue) Backscatter coeffs')
 
-#    fig6 = plt.figure()
-#    ax1 = fig6.add_subplot(1,2,1)
-#    ax1.plot((P_1.loc['sigma_t'].values),z)
-#    ax1.set_xlabel('Original backscatter coeffs')
-#    ax1.set_ylabel('Altitude')
-#    
-#    ax2 = fig6.add_subplot(1,2,2)
-#    ax2.plot(sigma_klett.values,z)
-#    ax2.set_xlabel('Fernald Backscatter coeffs')
-#    plt.show()
+    templayer=pan.Series(data=betalist[0],index=[altlist[0],altlist[0]+layerwidth])
+    templayer={'beta_p':templayer,'lrat':lratlist[0]}
+
+    P_0=profgen(z,layers=[templayer],background=background,noise=0.0,E0=E0)
+    P_temp=P_0['NRB']
+    lratprof=P_0['sigma_t'].div(P_0['beta_t'])
+    lrat0=pan.Series(data=lratprof,index=z)
+    beta0=pan.Series(data=P_0['beta_t'],index=z)
+    sigma0=pan.Series(data=P_0['sigma_t'],index=z)
+ 
+    
+    for noiseval in noiserange:
+        
+        runkwargs={'background':background,
+                   'layerwidth':layerwidth,
+                   'betalist':betalist,
+                   'altlist':altlist,
+                   'lratlist':lratlist,
+                   'noise':[noiseval],
+                   'lrat_testrange':[0],
+                   'plotall':False,
+                   'verbose':False}
+                   
+        betastats,sigmastats=MCtest(z=z,numruns=100,**runkwargs)
+        df_betamean.loc[:,noiseval]=betastats['betamean']
+        df_deltabetamean.loc[:,noiseval]=betastats['deltabetamean']
+        df_sigmamean.loc[:,noiseval]=sigmastats['sigmamean']
+        df_deltasigmamean.loc[:,noiseval]=sigmastats['deltasigmamean']
+        
+        df_betastd.loc[:,noiseval]=betastats['betastd'].loc[interval]
+        df_deltabetastd.loc[:,noiseval]=betastats['deltabetastd'].loc[interval]
+        df_sigmastd.loc[:,noiseval]=sigmastats['sigmastd'].loc[interval]
+        df_deltasigmastd.loc[:,noiseval]=sigmastats['deltasigmastd'].loc[interval]
+    
+    
+    os.chdir('C:\Users\dashamstyr\Dropbox\PhD-General\Thesis\Thesis Sandbox')
+    
+    df_betamean.plot(logy=False)
+    beta0.plot(style='k')
+    for c in df_betamean.columns:
+        tempmean=df_betamean.loc[interval,c]        
+        plt.errorbar(interval,tempmean,yerr=df_betastd.loc[:,c],fmt='ro')
+    plt.savefig('Beta_{:.0e}.png'.format(noiserange[0]))
+    
+    df_deltabetamean.plot(logy=True)
+    beta0.plot(style='k')
+    for c in df_deltabetamean.columns:
+        tempmean=df_deltabetamean.loc[interval,c]        
+        plt.errorbar(interval,tempmean,yerr=df_deltabetastd.loc[:,c],fmt='ro')
+    plt.savefig('Delta-Beta_{:.0e}_semilogy.png'.format(noiserange[0]))
+    
+    df_sigmamean.plot(logy=False)
+    sigma0.plot(style='k')
+    for c in df_sigmamean.columns:
+        tempmean=df_sigmamean.loc[interval,c]        
+        plt.errorbar(interval,tempmean,yerr=df_sigmastd.loc[:,c],fmt='ro')
+    plt.savefig('Sigma_{:.0e}.png'.format(noiserange[0]))
+    
+    df_deltasigmamean.plot(logy=True)
+    sigma0.plot(style='k')
+    for c in df_deltasigmamean.columns:
+        tempmean=df_deltasigmamean.loc[interval,c]        
+        plt.errorbar(interval,tempmean,yerr=df_deltasigmastd.loc[:,c],fmt='ro')    
+    plt.savefig('Delta-Sigma_{:.0e}_semilogy.png'.format(noiserange[0]))
+    
+    
+                                        
+#    lrat_tester_full(z=z,beta_list=beta_list,alt_list=alt_list,lrat_list=lrat_list,
+#                     lrat_testrange=lrat_testrange,noise=noise,background=background,
+#                     layerwidth=layerwidth,method='range',layeronly=layeronly)
+    
+    
+        

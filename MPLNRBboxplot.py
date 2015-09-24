@@ -18,12 +18,12 @@ olddir = os.getcwd()
 
 #os.chdir('C:\SigmaMPL\DATA')
 
-os.chdir('E:\Smoke2015\Processed')
+os.chdir('K:\Smoke2015\Processed')
 
 filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
 
-depollist = []
-depoldates = []
+NRBlist = []
+NRBdates = []
 jsondat={}
 
 for f in filepath:
@@ -35,17 +35,17 @@ for f in filepath:
     print 'Resampling {0}'.format(f)
     MPLfile.alt_resample(altrange)
     
-    depolraw=MPLfile.depolrat[0]
-    tempdate=depolraw.index[0].strftime("%m-%d")
+    NRBraw=MPLfile.NRB[0]
+    tempdate=NRBraw.index[0].strftime("%m-%d")
     print 'Filtering data from {0}'.format(tempdate)
     scenefilt=MPLfile.scenepanel[0]['Sub-Type']
-    depolfilt=mhist.scenefilter(depolraw,scenefilt,filterterms=['Smoke / Urban','Polluted Dust'])    
-    tempfilt=depolfilt.stack().dropna()
+    NRBfilt=mhist.scenefilter(NRBraw,scenefilt,filterterms=['Smoke / Urban','Polluted Dust'])    
+    tempfilt=NRBfilt.stack().dropna()
     #clean up obvious outliers (non-physical results)
-    tempclean=tempfilt[tempfilt>0.0][tempfilt<=1.0]
-    jsondat[tempdate]={'median':tempclean.median(),'std':tempclean.std(),'counts':len(tempclean),'freq':(100.0*len(tempclean)/(len(depolraw.stack().dropna())))}
-    depoldates.append(tempdate)    
-    depollist.append(tempclean)
+    tempclean=tempfilt[tempfilt>0.0]
+    jsondat[tempdate]={'median':tempclean.median(),'std':tempclean.std(),'counts':len(tempclean),'freq':(100.0*len(tempclean)/(len(NRBraw.stack().dropna())))}
+    NRBdates.append(tempdate)    
+    NRBlist.append(tempclean)
 
 fignum = 0
 
@@ -61,11 +61,11 @@ fignum+=1
 fig=plt.figure(fignum,figsize=(45,5),dpi=100)
 fig.clf()
 the_axis=fig.add_subplot(111)
-bplot = the_axis.boxplot(depollist, sym = "")
-plt.xticks(range(1,(len(depoldates)+1)),depoldates,rotation=45,ha='right')
-the_axis.set_ylabel('Volume Depolarization Ratio', fontsize = 24)
+bplot = the_axis.boxplot(NRBlist, sym = "")
+plt.xticks(range(1,(len(NRBdates)+1)),NRBdates,rotation=45,ha='right')
+the_axis.set_ylabel('NRB [${counts*km^{2}}/{\mu s*\mu J}$]', fontsize = 24)
 #t = the_axis.set_title('Depolarization Boxplot for Aksu Lidar, 150-4000m', fontsize = 24)
-plt.ylim((0,0.5))
+the_axis.set_ylim(0.0,1.0)
 
 #t.set_y(1.03)
 
@@ -83,10 +83,10 @@ for line in the_axis.yaxis.get_ticklines():
         
 [i.set_linewidth(4) for i in the_axis.spines.itervalues()]
 
-savetime=[depoldates[0],depoldates[-1]]
-fig.savefig('../Figures/{0}-{1}-{2}km-depolboxplot.png'.format(savetime[0],savetime[1],altrange[-1]),
+savetime=[NRBdates[0],NRBdates[-1]]
+fig.savefig('../Figures/{0}-{1}-{2}km-NRBboxplot.png'.format(savetime[0],savetime[1],altrange[-1]),
             bbox_inches='tight')
 fig.canvas.draw()
 
-with open('{0}-{1}-{2}km-depolstats.txt'.format(savetime[0],savetime[1],altrange[-1]),'w') as outfile:
+with open('{0}-{1}-{2}km-NRBstats.txt'.format(savetime[0],savetime[1],altrange[-1]),'w') as outfile:
     json.dump(jsondat,outfile,sort_keys=True,indent=4)

@@ -12,7 +12,6 @@ import numpy as np
 from copy import deepcopy
 from itertools import groupby
 from scipy import signal
-from matplotlib import pyplot as plt
 import operator
 import inversiontools as itools
 from scipy import optimize as opt
@@ -21,6 +20,12 @@ from scipy.ndimage.filters import generic_filter as genfilt
 import MPLtools as mtools
 import MPLplot as mplot
 
+if sys.platform == 'win32': 
+    from matplotlib import pyplot as plt
+else:
+    import matplotlib
+    matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
 
 
 def molecular_detect(MPLin,**kwargs):    
@@ -170,6 +175,7 @@ def PBL_detect(MPLin,**kwargs):
     widths=kwargs.get('widths',np.arange(4,15))
     layerwidth=kwargs.get('layerwidth',4)
     numprofs=kwargs.get('numprofs',3)
+    winsize=kwargs.get('winsize',10)
     bg_alt=kwargs.get('bg_alt',None)
     datatype=kwargs.get('datatype','NRB')
     layer_min=kwargs.get('layer_min',None)
@@ -192,7 +198,7 @@ def PBL_detect(MPLin,**kwargs):
     
     PBLout = pan.Series(index=rawdata.index)
     z=rawdata.columns.values
-    smootheddata=pan.DataFrame(genfilt(rawdata,np.mean,(numprofs,1)),
+    smootheddata=pan.DataFrame(genfilt(rawdata,np.mean,(numprofs,winsize)),
                                index=rawdata.index, columns=rawdata.columns)
     for i in smootheddata.index:
         tempprof=smootheddata.ix[i] 
@@ -207,31 +213,42 @@ def PBL_detect(MPLin,**kwargs):
             
             #PBL height can only be negative (min) values and edge effects are removed
             #by remving edges layerwidth in size
+            tempalt=z[minloc[1]]
             
-            layerwidthindex=np.where(widths==layerwidth)[0]
-            CWTvals=tempcwt[layerwidthindex,:][0]
-            CWTminvals=CWTvals[minloc]
-            CWTminalts=z[minloc]
             
+#            layerwidthindex=np.where(widths==layerwidth)[0]
+#            CWTvals=tempcwt[layerwidthindex,:][0]
+#            CWTminvals=CWTvals[minloc]
+#            CWTminalts=z[minloc]
+#            
             tempmolht=mol_min.loc[i] 
             templayerht=layer_min.loc[i]
-                
+            
             edgealt=z[layerwidth-1]
             
             if np.isnan(templayerht) or templayerht<edgealt:
-                maxalt=z[-1]
+                templayeralt=z[-1]
             else:
-                maxalt=templayerht
+                templayeralt=templayerht
             
+            if np.isnan(tempmolht) or tempmolht<edgealt:
+                tempmolalt=z[-1]
+            else:
+                tempmolalt=tempmolht
             
-            try:
-                PBLval=min([v[0] for v in zip(CWTminvals,CWTminalts) if edgealt<=v[1]<=maxalt])                
-            except ValueError:
-                PBLval=None
+            maxalt=np.min([tempmolalt,templayeralt])
+            
+            if tempalt<=maxalt:
+                PBLout.ix[i]=tempalt
+            else:
                 PBLout.ix[i]=maxalt
+#            try:
+#                PBLout.ix[i]=min([v for v in minalts if v<=maxalt])                
+#            except ValueError:
+#                PBLout.ix[i]=maxalt
                     
-            if PBLval is not None:
-                PBLout.ix[i]=CWTminalts[np.where(CWTminvals==PBLval)]
+#            if PBLval is not None:
+#                PBLout.ix[i]=CWTminalts[np.where(CWTminvals==PBLval)]
             
     return PBLout
 
@@ -279,7 +296,7 @@ def find_layers(MPLin,**kwargs):
     Outputs:
     panelout = a pandas panel object with three axes:
         major-axis: datetime of individual profiles
-        minor-axis: layer info ['Base','Peak','Top','Delta','Depol','Type',
+        minor-axis: layer info ['Base','Peak','Top','Mean','Depol','Type',
                                 'Sub-Type','Lidar_Ratio']
         columns: Layer number (e.g. 'Layer1')
     """
@@ -289,7 +306,8 @@ def find_layers(MPLin,**kwargs):
     widths=kwargs.get('widths',np.arange(2,5))
     CWTwidth=kwargs.get('CWTwidth',2)
     minwidth=kwargs.get('minwidth',4)
-    noisethresh=kwargs.get('noisethresh',3)
+    noisethresh=kwargs.get('noisethresh',1.0)
+    depolnoisethresh=kwargs.get('depolnoisethresh',1.0)
     minwidth=kwargs.get('minwidth',4)
     minsep=kwargs.get('minsep',2)
     sigma0=kwargs.get('sigma0',None)
@@ -323,7 +341,7 @@ def find_layers(MPLin,**kwargs):
     rawsigma=MPLin.sigma[datatype][0]
     depolsigma=MPLin.sigma['depolrat'][0]  
     panelout=pan.Panel(major_axis=rawdata.index,minor_axis=['Base','Peak','Top',
-    'Delta','Depol','Type','Sub-Type','Lidar_Ratio'])
+    'Mean','Depol','Type','Sub-Type','Lidar_Ratio'])
     
     for i in rawdata.index:
         tempprof=rawdata.ix[i]
@@ -356,7 +374,7 @@ def find_layers(MPLin,**kwargs):
             maxloc=[maxval[1] for maxval in tempmax if maxval[0]==CWTwidth]
             filterkwargs={'thresh':noisethresh,'minwidth':minwidth,'minsep':minsep,
                           'depolwidths':widths,'depollayerwidth':minwidth,
-                          'depolwavelet':wavelet}
+                          'depolwavelet':wavelet,'depolthresh':depolnoisethresh}
             templayers=layer_filter(tempprof,tempsigma0,tempdepolprof,tempdepolsigma0,
                                     maxloc,minloc,datatype,**filterkwargs)
             
@@ -366,13 +384,13 @@ def find_layers(MPLin,**kwargs):
                 minalt=indices[0]
                 peakalt=indices[1]
                 maxalt=indices[2]
-                delta=indices[3]
+                meanval=indices[3]
                 meandepolrat=indices[4]
                 panelname='Layer{0}'.format(n)
     #            layerdepolratprof=tempdepolratprof.ix[minalt:maxalt]
     #            meandepolrat=np.mean(layerdepolratprof)
                 peakval=tempprof.ix[peakalt]
-                if peakval <= 0.0 or meandepolrat <= 0.0:
+                if meanval <= 0.0 or meandepolrat <= 0.0:
                     layertype='Insufficient Signal'
                     layersubtype='Insufficient Signal'
                     layerratio=udefrat
@@ -380,11 +398,11 @@ def find_layers(MPLin,**kwargs):
                     layertype='Cloud'
                     layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
                                                            icethresh=icethresh)    
-                elif peakval >= cloudthresh[0]:
+                elif meanval >= cloudthresh[0]:
                     layertype='Cloud'  
                     layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
                                                            icethresh=icethresh)    
-                elif peakval >= cloudthresh[1] and meandepolrat>waterthresh:
+                elif meanval >= cloudthresh[1] and meandepolrat>np.mean([waterthresh,icethresh]):
                     layertype='Cloud'  
                     layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
                                                            icethresh=icethresh)
@@ -400,7 +418,7 @@ def find_layers(MPLin,**kwargs):
                 panelout.loc[panelname,i,'Base']=minalt
                 panelout.loc[panelname,i,'Peak']=peakalt
                 panelout.loc[panelname,i,'Top']=maxalt
-                panelout.loc[panelname,i,'Delta']=delta
+                panelout.loc[panelname,i,'Mean']=meanval
                 panelout.loc[panelname,i,'Depol']=meandepolrat
                 panelout.loc[panelname,i,'Type']=layertype
                 panelout.loc[panelname,i,'Sub-Type']=layersubtype
@@ -435,7 +453,8 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
              multiple of sigma0 to be counted.  default: 3
     
     """
-    thresh=kwargs.get('thresh',3)
+    thresh=kwargs.get('thresh',1.0)
+    depolthresh=kwargs.get('depolthresh',1.0)
     minwidth=kwargs.get('minwidth',4)
     minsep=kwargs.get('minsep',2)
     depolwidths=kwargs.get('depolwidths',np.arange(2,5))
@@ -455,7 +474,7 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
         peakloc=maxiloc[n]
         peakval=prof.iloc[peakloc]
         threshval=thresh*sigma0
-        
+                
         if peakval >= threshval:
             edge_below_list=[v for v in miniloc[nextminloc:] if v<peakloc]
             edge_above_list=[v for v in miniloc[nextminloc:] if v>peakloc]
@@ -463,10 +482,12 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
             if not edge_above_list or not edge_below_list:
                 continue
             #Step 3: Calculate delta signal between peak and lower edge (directly before)
-            for edge_below in edge_below_list[::-1]:            
+
+            for edge_below in edge_below_list[::-1]:  
                 delta_lower=prof.iloc[peakloc]-prof.iloc[edge_below]        
                 #Step 4: Filter out false layers for which delta < thresh*signam0
-                if delta_lower>threshval and edge_below>=0.0:
+
+                if delta_lower>threshval and edge_below>=0:
                     templowedge=edge_below
                     break
                 else:
@@ -475,7 +496,7 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
             if templowedge is not None:
                 for edge_above in edge_above_list:
                     delta_upper=prof.iloc[peakloc]-prof.iloc[edge_above]
-                    if delta_upper>threshval and edge_above>=0.0:
+                    if delta_upper>threshval and edge_above<miniloc[-1]:
                         #if upper edge is found, add indices of (lower,center,upper, maximum delta) to layers
     #                    temppeakval=np.max(prof.iloc[templowedge:edge_above])
     #                    temppeakloc=np.where(prof.values==temppeakval)
@@ -484,7 +505,7 @@ def layer_filter(prof,sigma0,depolratprof,depolratsigma0,maxiloc,miniloc,datatyp
                             tempdepolratprof=depolratprof.iloc[templowedge:edge_above]
         #                    delta=max(delta_lower,delta_upper)
                             depolkwargs={'widths':depolwidths,'layerwidth':depollayerwidth,
-                                         'wavelet':depolwavelet}
+                                         'wavelet':depolwavelet,'minwidth':minwidth,'noisethresh':depolthresh}
                             depol_layers=find_depollayers(tempprof,tempdepolratprof,
                                                           depolratsigma0,**depolkwargs)
                             
@@ -503,8 +524,8 @@ def find_depollayers(copolprof,depolratprof,depolratsigma0,**kwargs):
     widths=kwargs.get('widths',np.arange(2,5))
     layerwidth=kwargs.get('layerwidth',2)
     wavelet=kwargs.get('wavelet',signal.ricker)
-    noisethresh=kwargs.get('noisethresh',1)
-    
+    noisethresh=kwargs.get('noisethresh',1.0)
+    minwidth=kwargs.get('minwidth',4)
 #    prevlayernum=kwargs.get('prevlayernum',0)
 #    depolratSNR=calc_SNR_depolrat(depolratprof,depolratsigma=depolratsigma,signal0=signalsigma0)
     
@@ -518,11 +539,11 @@ def find_depollayers(copolprof,depolratprof,depolratsigma0,**kwargs):
     
     edgeloc=np.sort(minloc+maxloc)
     edgealts=[z[v] for v in edgeloc]
-    templayers=depol_filter(depolratprof,copolprof,edgealts,depolratsigma0,noisethresh)
+    templayers=depol_filter(depolratprof,copolprof,edgealts,depolratsigma0,noisethresh,minwidth)
     
     return templayers
     
-def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
+def depol_filter(depolprof,signalprof,edgealts,sigma0,noisethresh,minwidth):
     """
     
     """
@@ -541,7 +562,7 @@ def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
         meanbelow=np.mean(depolprof.ix[base:edge])
         meanabove=np.mean(depolprof.ix[edge:nextedge])
         depoldelta=abs(meanabove-meanbelow)
-        if depoldelta>=thresh*sigma0:
+        if depoldelta>=noisethresh*sigma0:
             if n==len(edgealts):
                 bottom=edge
                 top=nextedge
@@ -553,10 +574,11 @@ def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
             temppeakval=np.max(signalprof.ix[bottom:top])
             temppeakloc=np.where(signalprof.values==temppeakval)
             temppeakalt=signalprof.index[temppeakloc].values[0]
-            delta_below=signalprof.ix[temppeakalt]-signalprof.ix[bottom]
-            delta_above=signalprof.ix[temppeakalt]-signalprof.ix[top]
-            signaldelta=max(delta_below,delta_above)
-            layers.append([bottom,temppeakalt,top,signaldelta,meandepol])
+#            delta_below=signalprof.ix[temppeakalt]-signalprof.ix[bottom]
+#            delta_above=signalprof.ix[temppeakalt]-signalprof.ix[top]
+#            signaldelta=max(delta_below,delta_above)
+            meansignal=np.mean(signalprof.ix[bottom:top])
+            layers.append([bottom,temppeakalt,top,meansignal,meandepol])
             base=edge
             n+=1
         else:
@@ -568,10 +590,11 @@ def depol_filter(depolprof,signalprof,edgealts,sigma0,thresh=1):
         temppeakval=np.max(signalprof)
         temppeakloc=np.where(signalprof.values==temppeakval)
         temppeakalt=signalprof.index[temppeakloc].values[0]
-        delta_below=signalprof.ix[temppeakalt]-signalprof.ix[bottom]
-        delta_above=signalprof.ix[temppeakalt]-signalprof.ix[top]
-        signaldelta=max(delta_below,delta_above)
-        layers.append([bottom,temppeakalt,top,signaldelta,meandepol])
+#        delta_below=signalprof.ix[temppeakalt]-signalprof.ix[bottom]
+#        delta_above=signalprof.ix[temppeakalt]-signalprof.ix[top]
+#        signaldelta=max(delta_below,delta_above)
+        meansignal=np.mean(signalprof)
+        layers.append([bottom,temppeakalt,top,meansignal,meandepol])
            
     return layers
 
@@ -694,7 +717,8 @@ def findalllayers(**kwargs):
     molthresh=kwargs.get('molthresh',1)
     winsize=kwargs.get('winsize',5)
     wavelet=kwargs.get('wavelet',signal.ricker)
-    noisethresh=kwargs.get('noisethresh',0.4)
+    noisethresh=kwargs.get('noisethresh',1.0)
+    depolnoisethresh=kwargs.get('depolnoisethresh',1.0)
     cloudthresh=kwargs.get('cloudthresh',(1.0,0.40))
     maxaeroalt=kwargs.get('maxaeroalt',10.0)
     CWTwidth=kwargs.get('CWTwidth',2)
@@ -704,6 +728,8 @@ def findalllayers(**kwargs):
     PBLwavelet=kwargs.get('PBLwavelet',dog)
     PBLCWTrange=kwargs.get('PBLCWTrange',np.arange(4,15))
     PBLwidth=kwargs.get('PBLwidth', 4)
+    PBLnumprofs=kwargs.get('PBLnumprofs',1)
+    PBLwinsize=kwargs.get('PBLwinsize',5)
     savemasks=kwargs.get('savemasks',False)
     savemaskname=kwargs.get('savemaskname','testmasksall.h5')
     sigma0=kwargs.get('sigma0',None)
@@ -723,7 +749,7 @@ def findalllayers(**kwargs):
     
     molecular=molecular_detect(mplin,varthresh=molthresh, winsize=winsize)
     
-    layerkwargs = {'wavelet':wavelet,'noisethresh':noisethresh,
+    layerkwargs = {'wavelet':wavelet,'noisethresh':noisethresh,'depolnoisethresh':depolnoisethresh,
                    'cloudthresh':cloudthresh,'datatype':datatype,'CWTwidth':CWTwidth,
                    'widths':layerCWTrange,'minwidth':minwidth,'bg_alt':bg_alt,'maxaeroalt':maxaeroalt,
                    'waterthresh':waterthresh,'icethresh':icethresh,'smokethresh':smokethresh,
@@ -735,13 +761,17 @@ def findalllayers(**kwargs):
     except KeyError:
         mol_min=pan.Series(data=mplin.NRB[0].columns[-1],index=mplin.NRB[0].index)
     try:
-        layer_min=layers.loc['Layer0']['Base']
+        layer0_base=layers.loc['Layer0']['Base']
+        layer0_top=layers.loc['Layer0']['Top']
+        profmin=mplin.NRB[0].columns[-1]
+        layer_min = pan.Series(data=[b if b>profmin else t for b,t in zip(layer0_base,layer0_top)],index=mplin.NRB[0].index)
+        
     except KeyError:
         layer_min=pan.Series(data=mplin.NRB[0].columns[-1],index=mplin.NRB[0].index)
         
     PBLkwargs = {'wavelet':PBLwavelet,'mol_min':mol_min,'layer_min':layer_min,
                  'widths':PBLCWTrange,'layerwidth':PBLwidth,'bg_alt':bg_alt,
-                 'datatype':datatype}
+                 'datatype':datatype,'numprofs':PBLnumprofs,'winsize':PBLwinsize}
     if doPBL:
         pbl=PBL_detect(mplin,**PBLkwargs)
     else:
@@ -815,6 +845,13 @@ def scenemaker(layerdict,**kwargs):
     savefile=kwargs.get('savefile',False)
     savefilename=kwargs.get('savefilename','test.h5')
     colordict=kwargs.get('colordict',None)
+    waterthresh=kwargs.get('waterthresh',0.10)
+    icethresh=kwargs.get('icethresh',0.35)
+    smokethresh=kwargs.get('smokethresh',0.10)
+    dustthresh=kwargs.get('dustthresh',0.20)
+    maxaeroalt=kwargs.get('maxaeroalt',10.0)
+    cloudthresh=kwargs.get('cloudthresh',(10.0,2.0))
+    minlayerwidth=kwargs.get('minlayerwidth',4)
     
     if colordict is None:
         colordict={'Clear Air':0,
@@ -835,7 +872,7 @@ def scenemaker(layerdict,**kwargs):
     subtypemask=pan.DataFrame(index=times,columns=alts)
     lrat=pan.DataFrame(index=times,columns=alts)
     depolrat=pan.DataFrame(index=times,columns=alts)
-    delta=pan.DataFrame(index=times,columns=alts)
+    layermean=pan.DataFrame(index=times,columns=alts)
     layerbase=pan.DataFrame(index=times,columns=alts)
     layertop=pan.DataFrame(index=times,columns=alts)
     colormask=pan.DataFrame(index=times,columns=alts)
@@ -855,7 +892,7 @@ def scenemaker(layerdict,**kwargs):
             subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='Clear Air'            
             lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=molrat
             depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=moldepol
-            delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0.0
+            layermean.loc[t,(layermean.columns>=base)&(layermean.columns<=top)]=0.0
             layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
             layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top  
             colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['Clear Air']
@@ -864,7 +901,7 @@ def scenemaker(layerdict,**kwargs):
             base=l[1]['Base']
             top=l[1]['Top']
             temprat=l[1]['Lidar_Ratio']
-            tempdelta=l[1]['Delta']
+            tempmean=l[1]['Mean']
             temptype=l[1]['Type']
             tempsubtype=l[1]['Sub-Type']
             tempdepol=l[1]['Depol']
@@ -872,7 +909,7 @@ def scenemaker(layerdict,**kwargs):
             subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]=tempsubtype
             lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=temprat
             depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=tempdepol
-            delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=tempdelta
+            layermean.loc[t,(layermean.columns>=base)&(layermean.columns<=top)]=tempmean
             layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
             layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
             colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict[tempsubtype]
@@ -890,8 +927,8 @@ def scenemaker(layerdict,**kwargs):
         
         #find and classify unidentified areas
         tempprof=typemask.loc[t]
-        tempprof.fillna('Insufficient Signal',inplace=True)
-        tempmask=pan.Series(alts,index=[v=='Insufficient Signal' for v in tempprof])
+        tempprof.fillna('Unidentified',inplace=True)
+        tempmask=pan.Series(alts,index=[v=='Unidentified' for v in tempprof])
         tempgroups=tempmask.groupby(level=0) 
         #assuming uniform altitude steps
         altstep=alts[1]-alts[0]
@@ -908,15 +945,51 @@ def scenemaker(layerdict,**kwargs):
                     else:
                         base=layeralt[0]
                         top=layeralt[-1]
-                        typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]='Insufficient Signal'
-                        subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]='Insufficient Singal'
-                        lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=udefrat
-                        depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=udefdepol
-                        delta.loc[t,(delta.columns>=base)&(delta.columns<=top)]=0.0
-                        layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
-                        layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
-                        colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict['Insufficient Signal']
+                        unidentifiedNRB=mpl.NRB[0].loc[t,base:top]
+                        unidentifieddepol=mpl.depolrat[0].loc[t,base:top]
                         
+                        if len(unidentifiedNRB) <= minlayerwidth:
+                            continue
+                        else:
+                            meanval=np.mean(unidentifiedNRB)
+                            meandepolrat=np.mean(unidentifieddepol)
+#                            layerdelta=np.max([peakval-unidentifiedNRB.iloc[0],peakval-unidentifiedNRB.iloc[-1]])
+                            
+                            if meanval <= 0.0 or meandepolrat <= 0.0:
+                                layertype='Insufficient Signal'
+                                layersubtype='Insufficient Signal'
+                                layerratio=udefrat
+                                meandepolrat=udefdepol
+                                
+                            elif meandepolrat >= 0.5:
+                                layertype='Cloud'  
+                                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                                       icethresh=icethresh)    
+                            elif base>= maxaeroalt:
+                                layertype='Cloud'  
+                                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                                       icethresh=icethresh)
+                            elif meanval >= cloudthresh[0]:
+                                layertype='Cloud'  
+                                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                                       icethresh=icethresh)    
+                            elif meanval >= cloudthresh[1] and meandepolrat>np.mean([waterthresh,icethresh]):
+                                layertype='Cloud'  
+                                layersubtype,layerratio=icewaterfilter(meandepolrat,waterthresh=waterthresh,
+                                                                       icethresh=icethresh)
+                            else:
+                                layertype='Aerosol'
+                                layersubtype,layerratio=aerosoltypefilter(meandepolrat,smokethresh=smokethresh,
+                                                                          dustthresh=dustthresh)
+                                                                          
+                            typemask.loc[t,(typemask.columns>=base)&(typemask.columns<=top)]=layertype
+                            subtypemask.loc[t,(subtypemask.columns>=base)&(subtypemask.columns<=top)]=layersubtype
+                            lrat.loc[t,(lrat.columns>=base)&(lrat.columns<=top)]=layerratio
+                            depolrat.loc[t,(depolrat.columns>=base)&(depolrat.columns<=top)]=meandepolrat
+                            layermean.loc[t,(layermean.columns>=base)&(layermean.columns<=top)]=meanval
+                            layerbase.loc[t,(layerbase.columns>=base)&(layerbase.columns<=top)]=base
+                            layertop.loc[t,(layertop.columns>=base)&(layertop.columns<=top)]=top
+                            colormask.loc[t,(colormask.columns>=base)&(colormask.columns<=top)]=colordict[layersubtype]                        
     typemask.fillna(method='ffill',axis=1,inplace=True)
     subtypemask.fillna(method='ffill',axis=1,inplace=True) 
     lrat.fillna(method='ffill',axis=1,inplace=True)
@@ -925,7 +998,7 @@ def scenemaker(layerdict,**kwargs):
     layertop.fillna(method='ffill',axis=1,inplace=True)
     colormask.fillna(method='ffill',axis=1,inplace=True)
     paneldict={'Type':typemask,'Sub-Type':subtypemask,'Lidar_Ratio':lrat,'Depol':depolrat,
-               'Delta':delta,'Base':layerbase,'Top':layertop,'colormask':colormask}
+               'Mean':layermean,'Base':layerbase,'Top':layertop,'colormask':colormask}
     panelout=pan.Panel.from_dict(paneldict)
     
     mpl.scenepanel=[panelout]
@@ -1034,6 +1107,8 @@ def basiccorrection(mpl,**kwargs):
     method=kwargs.get('method','klett2')
     lrat=kwargs.get('lrat',None)
     mode=kwargs.get('mode','copol')
+    numprofs=kwargs.get('numprofs',1)
+    winsize=kwargs.get('winsize',1)
         
     NRBdat=[]
     scenepanel=[]
@@ -1056,12 +1131,14 @@ def basiccorrection(mpl,**kwargs):
        alts=NRB.columns
        tempbackscatter=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
        tempextinction=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
-       templidarratio=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
+#       templidarratio=pan.DataFrame(data=np.nan,index=times,columns=alts,dtype='float')
        backout=[]
        extout=[]
-       lidarratout=[]
+#       lidarratout=[]
+       smootheddata=pan.DataFrame(genfilt(NRB,np.mean,(numprofs,winsize)),
+                               index=times, columns=alts)
        for t in times:
-           tempprof=NRB.ix[t]
+           tempprof=smootheddata.ix[t]
            if pan.isnull(tempprof).all():
                continue
            else:
@@ -1075,14 +1152,15 @@ def basiccorrection(mpl,**kwargs):
                    templrat=pan.Series(data=lrat,index=alts)
                else:
                    templrat=scene.loc['Lidar_Ratio',t]
-               coefkwargs={}
+#               coefkwargs={}
     #           coefkwargs['wave']=wave
     #           coefkwargs['refalt']=refalt
     #           coefkwargs['method']=method
     #           coefkwargs['energy']=mpl.header['energy'].ix[t]
     #           coefkwargs['calrange']=calrange
 #               tempbeta,tempsigma,newlrat=itools.iterative_klett(tempprof,templrat,verbose=False)
-               tempbeta,tempsigma=itools.klett2(tempprof,templrat)
+               if method=='klett2':
+                   tempbeta,tempsigma=itools.klett2(tempprof,templrat,r_m=refalt,wave=wave)
                tempbackscatter.ix[t]=tempbeta
                tempextinction.ix[t]=tempsigma
 #               templidarratio.ix[t]=newlrat
@@ -1422,7 +1500,7 @@ if __name__=='__main__':
     mpltest.calc_all()
     
     layerdict=findalllayers(mplin=mpltest,timestep=timestep,molthresh=molthresh,
-                            layernoisethresh=layernoisethresh,datatype='NRB',sigma0=sigma0,
+                            noisethresh=layernoisethresh,datatype='NRB',sigma0=sigma0,
                             depolsigma0=depolsigma0)
     mpltest=scenemaker(layerdict)
     mpltest=basiccorrection(mpltest,inplace=True)

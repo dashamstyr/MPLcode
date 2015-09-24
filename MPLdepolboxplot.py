@@ -18,7 +18,7 @@ olddir = os.getcwd()
 
 #os.chdir('C:\SigmaMPL\DATA')
 
-os.chdir('E:\Smoke2015\Processed')
+os.chdir('K:\Smoke2015\Processed')
 
 filepath = mtools.get_files('Select MPL file', filetype = ('.h5', '*.h5'))
 
@@ -65,7 +65,7 @@ bplot = the_axis.boxplot(depollist, sym = "")
 plt.xticks(range(1,(len(depoldates)+1)),depoldates,rotation=45,ha='right')
 the_axis.set_ylabel('Volume Depolarization Ratio', fontsize = 24)
 #t = the_axis.set_title('Depolarization Boxplot for Aksu Lidar, 150-4000m', fontsize = 24)
-plt.ylim((0,0.5))
+the_axis.set_ylim(0.0,0.5)
 
 #t.set_y(1.03)
 

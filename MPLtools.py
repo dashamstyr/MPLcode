@@ -21,9 +21,15 @@ from scipy import constants as const
 from copy import deepcopy
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import generic_filter as genfilt
-import matplotlib.pyplot as plt
 from collections import OrderedDict 
 import h5py 
+
+if sys.platform == 'win32': 
+    from matplotlib import pyplot as plt
+else:
+    import matplotlib
+    matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
 
 class MPL:
     """
@@ -256,6 +262,8 @@ class MPL:
                     firstbin=headerdat['firstbin']
                     minalt = headerdat['rangecal']+firstbin*altstep
                     altrange = np.arange(minalt,maxalt,altstep,dtype='float')
+                    if len(altrange) != numbins:
+                        altrange=altrange[:numbins]
                     
                     if numchans == 2:
                         crosspolvals.fromfile(binfile, numbins) 
@@ -1340,7 +1348,7 @@ def set_dir(titlestring):
     # Get rid of the top-level instance once to make it actually invisible.
     root.destroy() 
           
-def get_files(titlestring,filetype = ('.txt','*.txt')):
+def get_files(titlestring,filetype = ('.mpl','*.mpl')):
      
     # Make a top-level instance and hide since it is ugly and big.
     root = Tk()
@@ -1909,7 +1917,7 @@ def NRB_mask_all(MPLin,**kwargs):
         tempscene['colormask']=NRB_mask_apply(tempscene['colormask'],threshseries,nopassval=9)
         tempscene['Lidar_Ratio']=NRB_mask_apply(tempscene['Lidar_Ratio'],threshseries,nopassval=np.nan)
         tempscene['Depol']=NRB_mask_apply(tempscene['Depol'],threshseries,nopassval=np.nan)
-        tempscene['Delta']=NRB_mask_apply(tempscene['Delta'],threshseries,nopassval=np.nan)
+        tempscene['Mean']=NRB_mask_apply(tempscene['Mean'],threshseries,nopassval=np.nan)
         tempscene['Base']=NRB_mask_apply(tempscene['Base'],threshseries,nopassval=np.nan)
         tempscene['Top']=NRB_mask_apply(tempscene['Top'],threshseries,nopassval=np.nan)
     return MPLout

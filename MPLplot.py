@@ -5,16 +5,23 @@ import numpy as np
 import os, sys
 import numpy as np
 import bisect
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
-import MPLtools as mtools
-from matplotlib.colors import ListedColormap
-import matplotlib.ticker as mtick
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-#from mpl_toolkits.axes_grid1 import make_axes_locatable
 import operator
 from copy import deepcopy
 import datetime
+import MPLtools as mtools
+
+if sys.platform=='win32':
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as colors    
+    import matplotlib.ticker as mtick
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+else:
+    import matplotlib
+    matplotlib.use('Agg')
+    from matplotlib import pyplot as plt
+    from matplotlib import colors as colors
+    from matplotlib import ticker as mtick
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 def custom_cmap(maptype,numvals,overcolor,undercolor):
     if maptype=="customjet":
@@ -361,9 +368,12 @@ def doubleplot(datafile,**kwargs):
     #create figure and plot image of depolarization ratios    
     plt.rc('font', family='serif', size=fsize)
     
-    numfigs=len(plt.get_fignums())
-    
-    fig = plt.figure(numfigs+1)
+    if showplot:
+        numfigs=len(plt.get_fignums())
+        
+        fig = plt.figure(numfigs+1)
+    else:
+        fig=plt.figure()
     
     h_set = range(1,25)
     h_set = map(str,h_set)
@@ -410,7 +420,7 @@ def doubleplot(datafile,**kwargs):
         else:
             os.mkdir(savefilepath)
             os.chdir(savefilepath)
-        fig.canvas.print_figure(savefilename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
+        fig.savefig(savefilename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
         os.chdir(olddir)
     if showplot:
         fig.canvas.draw()
@@ -482,9 +492,9 @@ def colormask_plot(mplin,**kwargs):
     Insufficient=(0.0/255.0,0.0/255.0,0.0/255.0)
                                        
     
-    maskmap=ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Dust_Smoke,Smoke_Urban,Unidentified,Insufficient])
+    maskmap=colors.ListedColormap([Clear,PBL,Ice,Water,Mixed,Dust,Dust_Smoke,Smoke_Urban,Unidentified,Insufficient])
     if SNRmask:
-        mplmasked=mtools.SNR_mask_colors(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
+        mplmasked=mtools.SNR_mask_scene(mplin,SNRthresh=SNRthresh,datatype=SNRtype,inplace=False)
         maskin=mplmasked.scenepanel[0]['colormask']
     else:
         maskin=deepcopy(mplin.scenepanel[0]['colormask'])
@@ -500,8 +510,11 @@ def colormask_plot(mplin,**kwargs):
     times=maskin.index
     alts=maskin.columns
     
-    numfigs=len(plt.get_fignums())
-    fig=plt.figure(numfigs+1,figsize=(30,5),dpi=100)
+    if showplot:
+        numfigs=len(plt.get_fignums())
+        fig=plt.figure(numfigs+1,figsize=(30,5),dpi=100)
+    else:
+        fig=plt.figure(figsize=(30,5))
     
 #    ax1=plt.subplot2grid((1,9),(0,0),rowspan=1,colspan=7)
 #    cax1=plt.subplot2grid((1,9),(0,7),rowspan=1,colspan=1) 
@@ -532,7 +545,7 @@ def colormask_plot(mplin,**kwargs):
                 savename=os.path.join(plotfilepath,plotfilename)
         else:
             savename=os.path.join(os.getcwd(),plotfilename)
-        fig.canvas.print_figure(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
+        fig.savefig(savename,dpi = dpi, edgecolor = 'b', bbox_inches = 'tight') 
     
     if showplot:
         fig.canvas.draw()
