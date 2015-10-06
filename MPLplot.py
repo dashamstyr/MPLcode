@@ -298,6 +298,7 @@ def doubleplot(datafile,**kwargs):
     toptype=kwargs.get('toptype','NRB')
     bottomtype=kwargs.get('bottomtype','depol')
     interpolation=kwargs.get('interpolation',None)
+    dotitles=kwargs.get('dotitles',False)
     
     if type(datafile)in [str,unicode]:
         savefilename = kwargs.get('savefilename','{0}.png'.format(datafile.split('.')[0]))
@@ -392,8 +393,9 @@ def doubleplot(datafile,**kwargs):
     cbar1.ax.set_ylabel(topunits)
     dateticks(ax1, dtindex, hours = hours, fsize = fsize, tcolor = 'w')
     ax1.set_xticklabels([])
-    t1 = ax1.set_title(toptitle, fontsize = fsize+10)
-    t1.set_y(1.03)
+    if dotitles:
+        t1 = ax1.set_title(toptitle, fontsize = fsize+10)        
+        t1.set_y(1.03)
             
     ax2 = fig.add_subplot(2,1,2)
     im2 = bottom_plot(fig, ax2, bottomdat.T[::-1],dtindex,alt[::-1],ar=ar, 
@@ -408,8 +410,10 @@ def doubleplot(datafile,**kwargs):
     dateticks(ax2, dtindex, hours = hours, fsize = fsize)
     ax2.set_xlabel('Time [Local]',fontsize = fsize+4)
     fig.autofmt_xdate()
-    t2 = ax2.set_title(bottomtitle,fontsize = fsize+10)
-    t2.set_y(1.03)    
+    
+    if dotitles:
+        t2 = ax2.set_title(bottomtitle,fontsize = fsize+10)
+        t2.set_y(1.03)    
     
     
     fig.set_size_inches(figheight*ar,figheight) 
@@ -525,7 +529,7 @@ def colormask_plot(mplin,**kwargs):
     cax1 = divider.append_axes("right", size="5%", pad=0.15)
     
     dateticks(ax1, times, hours = hours,fsize=fontsize)
-    ax1.set_xlabel('Hours [Local]',fontsize=fontsize+4)
+    ax1.set_xlabel('Time [Local]',fontsize=fontsize+4)
     ax1.set_ylabel('Altitude [km]', fontsize=fontsize+4)
     altticks(ax1, alts[::-1], fsize = fontsize, tcolor = 'k')
     cbar1=fig.colorbar(image,cax=cax1,orientation='vertical')

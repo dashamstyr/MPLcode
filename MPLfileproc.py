@@ -12,9 +12,9 @@ import MPLplot as mplot
 
 if sys.platform == 'win32': 
     from matplotlib import pyplot as plt
-    datalib = 'E:\Smoke2015'
-    proclib = 'E:\Smoke2015\Processed'
-    figurelib = 'E:\Smoke2015\Figures'
+    datalib = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Whistler-0327'
+    proclib = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Whistler-0327\Processed'
+    figurelib = 'C:\Users\dashamstyr\Dropbox\Lidar Files\MPL Data\DATA\Whistler-0327\Figures'
 else:
     import matplotlib
     matplotlib.use('Agg')
@@ -606,7 +606,7 @@ if __name__ == '__main__':
 #    olddir=os.getcwd()
 #    datafile=mtools.set_dir('Select folder containing .mpl data to process')
 #    os.chdir(datafile)
-    altrange=np.arange(0.150,3.030,0.030)
+    altrange=np.arange(0.150,10.030,0.030)
     timestep='240S'
     savetype='standard'
     procsavepath=proclib
@@ -646,8 +646,8 @@ if __name__ == '__main__':
     dustthresh=0.20
     
     docorrection=True
-    cor_numprofs=15
-    cor_winsize=5
+    cor_numprofs=1
+    cor_winsize=1
  
     doplot=True
     saveplot=True

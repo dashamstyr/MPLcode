@@ -15,6 +15,7 @@ from itertools import groupby
 import operator
 import copy
 import pickle
+from itertools import cycle
 
 def std_atm(z):
     ########################################################################
@@ -285,7 +286,7 @@ def addlayer(P_in, beta, lrat, bottom=None, top=None, inplace=True):
     
     return P_out
 
-def backandnoise(P_in,background = 0.0,stdev = 0.0,inplace=True):
+def backandnoise(P_in,background = None,stdev = None,inplace=True):
     """
     Adds gaussian random noise and background signal to any profile
     
@@ -308,12 +309,16 @@ def backandnoise(P_in,background = 0.0,stdev = 0.0,inplace=True):
     else:
         P_out=deepcopy(P_in)
     
-    if type(stdev)==pan.core.series.Series:
-        P_out['vals'] = [v+random.gauss(background,s) for v,s in zip(P_out['vals'],stdev.values)]
-    elif stdev:
-        P_out['vals'] = [v+random.gauss(background,stdev) for v in P_out['vals']]
-    else:
-        P_out['vals'] = [v+random.gauss(background,s) for v,s in zip(P_out['vals'],np.sqrt(P_out['vals']))]
+    if background is not None:
+        P_out['vals']=P_out['vals']+background
+    
+    if stdev is not None:
+        if type(stdev)==pan.core.series.Series:
+            P_out['vals'] = [v+random.gauss(0.0,s) for v,s in zip(P_out['vals'],stdev.values)]
+        elif stdev:
+            P_out['vals'] = [v+random.gauss(0.0,stdev) for v in P_out['vals']]
+        elif stdev=='shot':
+            P_out['vals'] = [v+random.gauss(background,s) for v,s in zip(P_out['vals'],np.sqrt(P_out['vals']))]
        
     return P_out
 
@@ -723,7 +728,7 @@ def klett2(P_in,lrat_in,**kwargs):
     #add arbitrary translation before transformation to avoid negative numbers in log value
     #because inversion is based on the differential of dS/dr, this changes nothing in solution    
     if np.min(P_new.values)<=0:
-        P_trans=P_new+(1e-8)-np.min(P_new.values)
+        P_trans=P_new+(1e-2)-np.min(P_new.values)
     else:
         P_trans=P_new
         
@@ -971,8 +976,8 @@ def klett2(P_in,lrat_in,**kwargs):
 
 def lrat_tester_noise(z,**kwargs):
     background=kwargs.get('background',0.0)
-    betalist=kwargs.get('beta',[1e-6])
-    altlist=kwargs.get('alt',[10])
+    betalist=kwargs.get('betalist',[1e-6])
+    altlist=kwargs.get('altlist',[10])
     lratlist=kwargs.get('lratlist',[30])
     layerwidth=kwargs.get('layerwidth',1.0)
     noise=kwargs.get('noise',[0.0])
@@ -1302,78 +1307,132 @@ def lrat_tester_full(z,beta_list,alt_list,lrat_list,**kwargs):
 #            deltasigma[tempdelt]=100.0*(P_0['sigma_t']-sigma_out[tempdelt])/P_0['sigma_t']
 #    return data_out
 
-def lrat_tester_quick(P_0,**kwargs):
+def lrat_tester_profile(P_0,lrat_rangein,rangetype='assigned',**kwargs):
     wave=kwargs.get('wave',532.0)
+    lrat0=kwargs.get('lrat0',None)
     E0=kwargs.get('E0',1.0)
     method=kwargs.get('method','klett2')
-    lrat_klett=kwargs.get('lrat_klett',np.arange(-.50,.55,.5))
-    lrat_fern=kwargs.get('lrat_fern',np.arange(15,80))
     calrange_fern=kwargs.get('calrange_fern',None)
     r_m=kwargs.get('r_m',None)
-    k=kwargs.get('k',1.0)
-    lrat_type=kwargs.get('lrat_type','part')
+    ylim=kwargs.get('ylim',None)
+    doplots=kwargs.get('doplots',True)
+    saveplots=kwargs.get('saveplots',True)
+    layerinfo=kwargs.get('layerinfo',None)
+
     
-    old_deltabeta=0.0
-    old_deltasigma=0.0
+    NRB=P_0['NRB']
+    beta0=P_0['beta_t']
+    sigma0=P_0['sigma_t']
     
+    z=NRB.index
+
     if method=='fernald':
-
-        for lrat in lrat_fern:
-            beta_temp,sigma_temp=fernald(P_0['NRB'], lrat, wave=wave, E=E0, calrange=calrange_fern)
-            deltabeta_temp=100.0*(P_0['beta_t']-beta_temp)/P_0['beta_t']
-            deltasigma_temp=100.0*(P_0['sigma_t']-sigma_temp)/P_0['sigma_t']
-            
-            if max(abs(deltabeta_temp)) > old_deltabeta:
-                loctemp=abs(deltabeta_temp).idxmax()                
-                betapoint=(deltabeta_temp.loc[loctemp],loctemp,lrat)
-            if max(abs(deltasigma_temp)) > old_deltasigma:
-                loctemp=abs(deltasigma_temp).idxmax()                
-                sigmapoint=(deltasigma_temp.loc[loctemp],loctemp,lrat)
-                
-    elif method=='klett':
-
-        lratprof=P_0['sigma_t']/P_0['beta_t'] 
-        lratprof.fillna(value=0,inplace=True)
-        if not r_m:
-            r_m=P_0.index.values[-1]
+        if rangetype=='assigned' or rangetype=='assigned_layer':
+            lrat_range=lrat_rangein
+            indexvals=["{:.1f}".format(v) for v in lrat_range]
+            lratindex=pan.Index(indexvals,name='Lidar Ratio [sr]')
+        elif rangetype=='percent' or rangetype=='percent_layer':
+            lrat_range=[lrat0*(1.0+v) for v in lrat_rangein]
+            indexvals=["{:+.0%}".format(v) for v in lrat_range]
+            lratindex=pan.Index(indexvals,name='Lidar Ratio Error')
         
-        sigma_m=P_0['sigma_t'].loc[r_m]        
-        for tempdelt in lrat_klett:
-            lrattemp=lratprof*tempdelt
-            beta_temp,sigma_temp=klett(P_in=P_0['NRB'],lrat_in=lrattemp,
-                                                            r_m=r_m,sigma_m=sigma_m,k=k)
-            deltabeta_temp=100.0*(P_0['beta_t']-beta_temp)/P_0['beta_t']
-            deltasigma_temp=100.0*(P_0['sigma_t']-sigma_temp)/P_0['sigma_t']
+        df_sigmaout=pan.DataFrame(index=z,columns=lratindex)
+        df_deltasigma=pan.DataFrame(index=z,columns=lratindex)
+        for lrat,ival in zip(lrat_range,indexvals):
+            beta_temp,sigma_temp=fernald(NRB, lrat, wave=wave, E=E0, calrange=calrange_fern)
+            deltasigma_temp=100.0*(sigma0-sigma_temp)/sigma0
             
-            if max(abs(deltabeta_temp)) > old_deltabeta:
-                loctemp=abs(deltabeta_temp).idxmax()                
-                betapoint=(deltabeta_temp.loc[loctemp],loctemp,tempdelt)
-            if max(abs(deltasigma_temp)) > old_deltasigma:
-                loctemp=abs(deltasigma_temp).idxmax()                
-                sigmapoint=(deltasigma_temp.loc[loctemp],loctemp,tempdelt  )
+            df_sigmaout.loc[:,ival]=sigma_temp
+            df_deltasigma.loc[:,ival]=deltasigma_temp
     elif method=='klett2':
-
-        lratprof=P_0['sigma_p']/P_0['beta_p']         
-        lratprof.fillna(value=0,inplace=True)
-        if not r_m:
-            r_m=P_0.index.values[-1]
+        if rangetype=='assigned':
+            indexvals=["{:.1f}".format(v) for v in lrat_rangein]
+            lratindex=pan.Index(indexvals,name='Lidar Ratio [sr]')
+            lrat_profs=[]
+            for lrat in lrat_rangein:
+                tempprof=pan.Series(data=lrat,index=z)
+                lrat_profs.append(tempprof)
+        elif rangetype=='assigned_layer':
+            indexvals=["{:.1f}".format(v) for v in lrat_rangein]
+            lratindex=pan.Index(indexvals,name='Layer Lidar Ratio [sr]')
+            lrat_profs=[]
+            for lrat in lrat_rangein:
+                tempprof=lrat*(P_0['sigma_p']!=0)
+                lrat_profs.append(tempprof)
+        elif rangetype=='percent':
+            lrat0=P_0['sigma_t'].div(P_0['beta_t']).fillna(0)
+            indexvals=["{:+.0%}".format(v) for v in lrat_rangein]
+            lratindex=pan.Index(indexvals,name='Lidar Ratio Error')
+            lrat_profs=[]
+            for lrat in lrat_rangein:
+                tempprof=lrat0*(1.0+lrat)
+                lrat_profs.append(tempprof)
+        elif rangetype=='percent_layer':
+            lrat0=P_0['sigma_p'].div(P_0['beta_p']).fillna(0)
+            indexvals=["{:+.0%}".format(v) for v in lrat_rangein]
+            lratindex=pan.Index(indexvals,name='Layer Lidar Ratio Error')
+            lrat_profs=[]
+            for lrat in lrat_rangein:
+                tempprof=lrat0*(1.0+lrat)
+                lrat_profs.append(tempprof)
+             
+        df_sigmaout=pan.DataFrame(index=z,columns=lratindex)
+        df_deltasigma=pan.DataFrame(index=z,columns=lratindex)
         
-        beta_m=P_0['beta_t'].loc[r_m] 
-        for tempdelt in lrat_klett:
-            lrattemp=lratprof*tempdelt
-            beta_temp,sigma_temp=klett2(P_in=P_0['NRB'],lrat_in=lrattemp,
-                                                            r_m=r_m,beta_m=beta_m)
-            deltabeta_temp=100.0*(P_0['beta_t']-beta_temp)/P_0['beta_t']
-            deltasigma_temp=100.0*(P_0['sigma_t']-sigma_temp)/P_0['sigma_t']
-            
-            if max(abs(deltabeta_temp)) > old_deltabeta:
-                loctemp=abs(deltabeta_temp).idxmax()                
-                betapoint=(deltabeta_temp.loc[loctemp],loctemp,tempdelt)
-            if max(abs(deltasigma_temp)) > old_deltasigma:
-                loctemp=abs(deltasigma_temp).idxmax()                
-                sigmapoint=(deltasigma_temp.loc[loctemp],loctemp,tempdelt)
+        if not r_m:
+            r_m=z.values[-1]
+        
+        beta_m=beta0.loc[r_m] 
 
-    return betapoint,sigmapoint
+        for lprof,ival in zip(lrat_profs,indexvals):            
+            beta_temp,sigma_temp=klett2(P_in=NRB,lrat_in=lprof,r_m=r_m,beta_m=beta_m)
+            deltasigma_temp=100.0*(sigma0-sigma_temp)/sigma0
+            
+            df_sigmaout.loc[:,ival]=sigma_temp
+            df_deltasigma.loc[:,ival]=deltasigma_temp
+    
+    if doplots:
+        fig1=plt.figure(figsize=(20, 5), dpi=80)
+        ax1=fig1.add_subplot(111)
+        sigma0.plot(ax=ax1,style='-k',linewidth=1.0,label='')
+        lines = ["--","-.",":"]
+        linecycler = cycle(lines)
+        
+        for col in df_sigmaout.columns:
+            ax1.plot(df_sigmaout.index,df_sigmaout.loc[:,col],next(linecycler),linewidth=4.0,label=col)
+#        df_sigmaout.plot(ax=ax1)
+        plt.xlabel('Altitude [km]')
+        plt.ylabel('Extionction [$km^{-1}$]')
+        plt.legend(title=df_sigmaout.columns.name)
+        if ylim is not None:
+            plt.ylim(ylim)
+        if saveplots:
+            if layerinfo is not None:
+                tempbeta=[]
+                templrat=[]                
+                for layer in layerinfo:
+                    tempbeta.append('{:.0e}'.format(layer['beta_p'].max()))
+                    templrat.append('{:.0f}'.format(layer['lrat']))
+                
+                if len(tempbeta)==1:
+                    betaname=tempbeta
+                    lratname=templrat
+                else:
+                    betaname='{0}-{1}'.format(tempbeta[0],tempbeta[-1])
+                    lratname='{0}-{1}'.format(templrat[0],templrat[-1])
+                    
+            savename='Sigmaprofs_{}_{}-beta{}_lrat{}-range{:.0f}-{:.0f}.png'.format(method,rangetype,betaname,lratname,lrat_rangein[0],lrat_rangein[-1])
+            plt.savefig(savename,bbox_inches='tight')
+        
+#        fig2=plt.figure()
+#        ax2=fig2.add_subplot(111)
+#        df_deltasigma.plot(ax=ax2)
+#        if saveplots:
+#            savename='Deltasigmaprofs_{0}-{1}.png'.format(lrat_range[0],lrat_range[-1])
+#            plt.savefig(savename)
+#        
+
+    return df_sigmaout,df_deltasigma
 
 def profile_input_tester(beta_list=[],alt_list=[],lrat_list=[]):
     
@@ -1429,56 +1488,41 @@ def MCtest(z,numruns=100,testmethod=lrat_tester_noise,**runkwargs):
     return betastats,sigmastats
     
 if __name__ == '__main__':
-
+    os.chdir('C:\Users\dashamstyr\Dropbox\PhD-General\Thesis\Thesis Sandbox')
     z = np.arange(0.150,15.000,0.15,dtype='float')
     E0=1.0 
-    background = 0.0
-    noiserange=[2e-8]#np.arange(2e-8,12e-8,2e-8)
+    background = 0
+    numruns=500
+#    SNRrange=[0.1,0.5,1.0,1.1,1.5,1.8,2.0,4.0,5.0,10.0,20.0]
+    SNRrange=[1.0,2.0,5.0,20.0]
     layerwidth=3.0
     layeronly=True
-    betalist=[0]#[1.0*10**-exp for exp in np.arange(3,8,1)]
-    altlist=[10.0]#np.arange(11.750,13.750,1.000)
-    lratlist=[30]#np.arange(15.0,65.0,10.0)
+    betalist=[1e-3]#[1.0*10**-exp for exp in np.arange(3,8,1)]
+    altlist=[7.5]#np.arange(11.750,13.750,1.000)
+    lratlist=[65]#np.arange(15.0,65.0,10.0)
     
-    lrat_testrange=[0]#np.arange(-0.4,1.2,0.2)
-    interval=[3,6,9,12]
+#    lrat_testrange=[8.0*np.pi/3.0,35,65,85]
+    lrat_testrange=[-0.5]
+    interval=np.arange(1.5,15,1.5)
     
-#    beta_layer1=pan.Series(data=1e-3, index=[0.500,1.500])
-#    beta_layer2=pan.Series(data=1e-4, index=[12.500,14.500])
-#    layer1={'beta_p':beta_layer1,'lrat':35}
-#    layer2={'beta_p':beta_layer2,'lrat':65}
-#    P_0=profgen(z,layers=[layer1,layer2],background=background,noise=noise)
-#    
-#    P_in=P_0.rsq 
-#    beta_m=P_0.beta_R
-#    lrat_m=8.0*np.pi/3.0
-#    lrat_p=P_0.sigma_p.div(P_0.beta_p).fillna(0.0)
-#    lrat0=P_0.sigma_p.div(P_0.beta_p).fillna(lrat_m)
-#    
-#    back,ext=klett2(P_in,lrat0,verbose=True)
-    
-#    testpan=lrat_tester_full(P_0,lrat_klett=np.arange(0.5,1.6,0.1))
-#    if sys.platform=='win32':
-#        os.chdir('K:\All_MPL_Stats')
-#    else:
-#        os.chdir('/data/lv1/pcottle/MPLStats/')
-        
-#    beta_comp,sigma_comp,lrat_comp=lrat_tester_noise(z,background=background,layerwidth=layerwidth,
-#                                                     betalist=betalist,altlist=altlist,lratlist=lratlist,
-#                                                     noise=noiserange,lrat_testrange=lrat_testrange,
-#                                                     plotall=False)
+    beta_layer1=pan.Series(data=1e-4, index=[2.500,4.500])
+    beta_layer2=pan.Series(data=1e-4, index=[7.500,9.500])
+    layer1={'beta_p':beta_layer1,'lrat':65}
+    layer2={'beta_p':beta_layer2,'lrat':65}
+    layerinfo=[layer2]
+#    P_0=profgen(z,layers=layerinfo,background=background)
+#    sigma,deltasigma=lrat_tester_profile(P_0,lrat_testrange,method='fernald',rangetype='assigned',lrat0=35,
+#                                         layerinfo=layerinfo,ylim=[0.0,0.12])
     
     
-    noiseindex=pan.Index(noiserange,name='Noise Level')
-    df_betamean=pan.DataFrame(index=z,columns=noiseindex)
-    df_betastd=pan.DataFrame(index=interval,columns=noiseindex)
-    df_deltabetamean=pan.DataFrame(index=z,columns=noiseindex)
-    df_deltabetastd=pan.DataFrame(index=interval,columns=noiseindex)
     
-    df_sigmamean=pan.DataFrame(index=z,columns=noiseindex)
-    df_sigmastd=pan.DataFrame(index=interval,columns=noiseindex)
-    df_deltasigmamean=pan.DataFrame(index=z,columns=noiseindex)
-    df_deltasigmastd=pan.DataFrame(index=interval,columns=noiseindex)
+    
+    SNRindex=pan.Index(SNRrange,name='Mean SNR for topmost 1 km')
+    
+    df_sigmamean=pan.DataFrame(index=z,columns=SNRindex)
+    df_sigmastd=pan.DataFrame(index=z,columns=SNRindex)
+    df_sigmasnr=pan.DataFrame(index=z,columns=SNRindex)
+    snrvals=pan.Series(index=SNRindex)
 
 
     templayer=pan.Series(data=betalist[0],index=[altlist[0],altlist[0]+layerwidth])
@@ -1492,59 +1536,67 @@ if __name__ == '__main__':
     sigma0=pan.Series(data=P_0['sigma_t'],index=z)
  
     
-    for noiseval in noiserange:
+    for SNRval in SNRrange:
+#        for betaval in betalist:
+#            for altval in altlist:
+#                for deltalrat in deltalratlist:
+        
+        tempmean=P_0['vals'].loc[(z[-1]-1):].mean()
+        tempstd=tempmean/SNRval
         
         runkwargs={'background':background,
                    'layerwidth':layerwidth,
                    'betalist':betalist,
                    'altlist':altlist,
                    'lratlist':lratlist,
-                   'noise':[noiseval],
-                   'lrat_testrange':[0],
+                   'noise':[tempstd],
+                   'lrat_testrange':lrat_testrange,
                    'plotall':False,
                    'verbose':False}
                    
-        betastats,sigmastats=MCtest(z=z,numruns=100,**runkwargs)
-        df_betamean.loc[:,noiseval]=betastats['betamean']
-        df_deltabetamean.loc[:,noiseval]=betastats['deltabetamean']
-        df_sigmamean.loc[:,noiseval]=sigmastats['sigmamean']
-        df_deltasigmamean.loc[:,noiseval]=sigmastats['deltasigmamean']
-        
-        df_betastd.loc[:,noiseval]=betastats['betastd'].loc[interval]
-        df_deltabetastd.loc[:,noiseval]=betastats['deltabetastd'].loc[interval]
-        df_sigmastd.loc[:,noiseval]=sigmastats['sigmastd'].loc[interval]
-        df_deltasigmastd.loc[:,noiseval]=sigmastats['deltasigmastd'].loc[interval]
+        betastats,sigmastats=MCtest(z=z,numruns=numruns,**runkwargs)
+        tempsigmamean=sigmastats['sigmamean']
+        tempsigmastd=sigmastats['sigmastd']        
+
+        df_sigmamean.loc[:,SNRval]=tempsigmamean
+        df_sigmastd.loc[:,SNRval]=tempsigmastd       
+    
+        fig1=plt.figure(figsize=(20, 5), dpi=80)
+        ax1=fig1.add_subplot(111)
+        ax1=sigma0.plot(ax=ax1,style='--k',linewidth=4.0,label='',logy=False)
+        ax1.plot(tempsigmamean.index,tempsigmamean,'-',linewidth=2.0,color='b',label='{:.2f}'.format(SNRval))
+        ax1.fill_between(tempsigmamean.index,(tempsigmamean+tempsigmastd),(tempsigmamean-tempsigmastd),color='b',alpha=0.2)
+        ax1.fill_between(tempsigmamean.index,(tempsigmamean+2*tempsigmastd),(tempsigmamean-2*tempsigmastd),color='g',alpha=0.2)
+        tempmean=tempsigmamean.loc[interval]        
+        ax1.errorbar(interval,tempmean,yerr=tempsigmastd.loc[interval],fmt='ro')  
+        plt.xlabel('Altitude [km]')
+        plt.ylabel('Extinction [$km^{-1}$]')
+        plt.legend(title='Mean SNR for topmost 1 km',loc=2)
+        plt.savefig('SNR-{:.1f}_lrat-{:.0f}_deltalrat={:.1f}_layerbeta-{:.0e}_alt-{:.0f}-{:.0f}_numruns-{:.0f}.png'.format(SNRval,lratlist[0],lrat_testrange[0],betalist[0],altlist[0],(altlist[0]+layerwidth),numruns),
+                    bbox_inches='tight')
     
     
-    os.chdir('C:\Users\dashamstyr\Dropbox\PhD-General\Thesis\Thesis Sandbox')
-    
-    df_betamean.plot(logy=False)
-    beta0.plot(style='k')
-    for c in df_betamean.columns:
-        tempmean=df_betamean.loc[interval,c]        
-        plt.errorbar(interval,tempmean,yerr=df_betastd.loc[:,c],fmt='ro')
-    plt.savefig('Beta_{:.0e}.png'.format(noiserange[0]))
-    
-    df_deltabetamean.plot(logy=True)
-    beta0.plot(style='k')
-    for c in df_deltabetamean.columns:
-        tempmean=df_deltabetamean.loc[interval,c]        
-        plt.errorbar(interval,tempmean,yerr=df_deltabetastd.loc[:,c],fmt='ro')
-    plt.savefig('Delta-Beta_{:.0e}_semilogy.png'.format(noiserange[0]))
-    
-    df_sigmamean.plot(logy=False)
-    sigma0.plot(style='k')
-    for c in df_sigmamean.columns:
-        tempmean=df_sigmamean.loc[interval,c]        
-        plt.errorbar(interval,tempmean,yerr=df_sigmastd.loc[:,c],fmt='ro')
-    plt.savefig('Sigma_{:.0e}.png'.format(noiserange[0]))
-    
-    df_deltasigmamean.plot(logy=True)
-    sigma0.plot(style='k')
-    for c in df_deltasigmamean.columns:
-        tempmean=df_deltasigmamean.loc[interval,c]        
-        plt.errorbar(interval,tempmean,yerr=df_deltasigmastd.loc[:,c],fmt='ro')    
-    plt.savefig('Delta-Sigma_{:.0e}_semilogy.png'.format(noiserange[0]))
+#    df_betamean.plot(logy=False)    
+#    beta0.plot(style='k')
+#    for c in df_betamean.columns:
+#        tempmean=df_betamean.loc[interval,c]        
+#        plt.errorbar(interval,tempmean,yerr=df_betastd.loc[:,c],fmt='ro')
+#    plt.savefig('Beta_{:.0e}.png'.format(noiserange[0]))
+#    
+#    df_deltabetamean.plot(logy=False)
+#    beta0.plot(style='k')
+#    for c in df_deltabetamean.columns:
+#        tempmean=df_deltabetamean.loc[interval,c]        
+#        plt.errorbar(interval,tempmean,yerr=df_deltabetastd.loc[:,c],fmt='ro')
+#    plt.savefig('Delta-Beta_{:.0e}.png'.format(noiserange[0]))
+#    
+#    
+#    df_deltasigmamean.plot(logy=False)
+#    sigma0.plot(style='k')
+#    for c in df_deltasigmamean.columns:
+#        tempmean=df_deltasigmamean.loc[interval,c]        
+#        plt.errorbar(interval,tempmean,yerr=df_deltasigmastd.loc[:,c],fmt='ro')    
+#    plt.savefig('Delta-Sigma_{:.0e}.png'.format(noiserange[0]))
     
     
                                         
